@@ -213,7 +213,7 @@ class CommonMetricPrinter(EventWriter):
             eta_string = None
             if self._last_write is not None:
                 estimate_iter_time = (time.perf_counter() - self._last_write[1]) / (
-                    iteration - self._last_write[0]
+                        iteration - self._last_write[0]
                 )
                 eta_seconds = estimate_iter_time * (self._max_iter - iteration - 1)
                 eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
@@ -252,23 +252,16 @@ class CommonMetricPrinter(EventWriter):
             max_mem_mb = None
 
         # NOTE: max_mem is parsed by grep in "dev/parse_results.sh"
+        eta_str = f"eta: {eta_string}" if eta_string else ""
+        epoch_str = f"[{storage.epoch:0{len(str(storage.max_epoch))}d}/{storage.max_epoch}]"
+        iter_str = f"[{storage.epoch_iter:0{len(str(storage.max_epoch_iter))}d}/{storage.max_epoch_iter}]"
+        loss_str = "  ".join([f"{k}: {v.median(self._window_size):.4g}"
+                              for k, v in storage.histories().items() if "loss" in k])
+        time_str = f"time: {iter_time:.4f}" if iter_time is not None else ""
+        data_time_str = f"data_time: {data_time:.4f}" if data_time is not None else ""
+        memory_str = f"max_mem: {max_mem_mb:.0f}M" if max_mem_mb is not None else ""
         self.logger.info(
-            " {eta}iter: {iter}  {losses}  {time}{data_time}lr: {lr}  {memory}".format(
-                eta=f"eta: {eta_string}  " if eta_string else "",
-                iter=iteration,
-                losses="  ".join(
-                    [
-                        "{}: {:.4g}".format(k, v.median(self._window_size))
-                        for k, v in storage.histories().items()
-                        if "loss" in k
-                    ]
-                ),
-                time="time: {:.4f}  ".format(iter_time) if iter_time is not None else "",
-                data_time="data_time: {:.4f}  ".format(data_time) if data_time is not None else "",
-                lr=lr,
-                memory="max_mem: {:.0f}M".format(max_mem_mb) if max_mem_mb is not None else "",
-            )
-        )
+            f" {eta_str} {epoch_str}{iter_str} {loss_str} {time_str} {data_time_str} lr: {lr} {memory_str}")
 
 
 class EventStorage:
@@ -290,6 +283,11 @@ class EventStorage:
         self._current_prefix = ""
         self._vis_data = []
         self._histograms = []
+
+        self._epoch = 1
+        self._max_epoch = 1
+        self._epoch_iter = 1
+        self._max_epoch_iter = 1
 
     def put_image(self, img_name, img_tensor):
         """
@@ -328,7 +326,7 @@ class EventStorage:
         existing_hint = self._smoothing_hints.get(name)
         if existing_hint is not None:
             assert (
-                existing_hint == smoothing_hint
+                    existing_hint == smoothing_hint
             ), "Scalar {} was put with a different smoothing_hint!".format(name)
         else:
             self._smoothing_hints[name] = smoothing_hint
@@ -445,6 +443,38 @@ class EventStorage:
     @iter.setter
     def iter(self, val):
         self._iter = int(val)
+
+    @property
+    def epoch(self):
+        return self._epoch
+
+    @epoch.setter
+    def epoch(self, val):
+        self._epoch = int(val) + 1
+
+    @property
+    def max_epoch(self):
+        return self._max_epoch
+
+    @max_epoch.setter
+    def max_epoch(self, val):
+        self._max_epoch = int(val)
+
+    @property
+    def epoch_iter(self):
+        return self._epoch_iter
+
+    @epoch_iter.setter
+    def epoch_iter(self, val):
+        self._epoch_iter = int(val) + 1
+
+    @property
+    def max_epoch_iter(self):
+        return self._max_epoch_iter
+
+    @max_epoch_iter.setter
+    def max_epoch_iter(self, val):
+        self._max_epoch_iter = int(val)
 
     @property
     def iteration(self):

@@ -5,7 +5,33 @@ from contextlib import contextmanager
 from functools import wraps
 import torch
 
-__all__ = ["retry_if_cuda_oom"]
+__all__ = ["retry_if_cuda_oom", "to_cuda", "to_numpy"]
+
+import numpy as np
+
+
+def to_cuda(data, device='cuda'):
+    if isinstance(data, torch.Tensor):
+        return data.to(device)
+    elif isinstance(data, np.ndarray):
+        return torch.from_numpy(data).to(device)
+    elif isinstance(data, list):
+        return [to_cuda(d, device) for d in data]
+    elif isinstance(data, dict):
+        return {k: to_cuda(v, device) for k, v in data.items()}
+    else:
+        return data
+
+
+def to_numpy(data):
+    if isinstance(data, torch.Tensor):
+        return data.detach().cpu().numpy()
+    elif isinstance(data, list):
+        return [to_numpy(d) for d in data]
+    elif isinstance(data, dict):
+        return {k: to_numpy(v) for k, v in data.items()}
+    else:
+        return data
 
 
 @contextmanager

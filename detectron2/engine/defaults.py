@@ -19,23 +19,17 @@ import torch
 from fvcore.nn.precise_bn import get_bn_modules
 from torch.nn.parallel import DistributedDataParallel
 
-import detectron2.data.transforms as T
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.data import (
-    MetadataCatalog,
     build_detection_test_loader,
     build_detection_train_loader,
 )
 from detectron2.evaluation import (
     DatasetEvaluator,
     inference_on_dataset,
-    print_csv_format,
-    verify_results,
 )
 from detectron2.modeling import build_model
-from detectron2.solver import build_lr_scheduler, build_optimizer
 from detectron2.utils import comm
-from detectron2.utils.collect_env import collect_env_info
 from detectron2.utils.env import TORCH_VERSION, seed_all_rng
 from detectron2.utils.events import CommonMetricPrinter, JSONWriter, TensorboardXWriter
 from detectron2.utils.file_io import PathManager
@@ -80,6 +74,7 @@ Run on multiple machines:
 """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+
     parser.add_argument("--config-file", default="", metavar="FILE", help="path to config file")
     parser.add_argument(
         "--resume",
@@ -90,10 +85,7 @@ Run on multiple machines:
     parser.add_argument("--eval-only", action="store_true", help="perform evaluation only")
     parser.add_argument("--num-gpus", type=int, default=1, help="number of gpus *per machine*")
     parser.add_argument("--num-machines", type=int, default=1, help="total number of machines")
-    parser.add_argument(
-        "--machine-rank", type=int, default=0, help="the rank of this machine (unique per machine)"
-    )
-
+    parser.add_argument("--machine-rank", type=int, default=0, help="the rank of this machine (unique per machine)")
     # PyTorch still may leave orphan processes in multi-gpu training.
     # Therefore we use a deterministic way to obtain port,
     # so that users are aware of orphan processes by seeing the port occupied.
@@ -136,7 +128,6 @@ def default_setup(cfg, args):
     logger = setup_logger(output_dir, distributed_rank=rank)
 
     logger.info("Rank of current process: {}. World size: {}".format(rank, comm.get_world_size()))
-    logger.info("Environment info:\n" + collect_env_info())
 
     logger.info("Command line arguments: " + str(args))
     if hasattr(args, "config_file") and args.config_file != "":
@@ -185,6 +176,7 @@ def default_writers(output_dir: str, max_iter: Optional[int] = None):
     ]
 
 
+# todo need construction
 class DefaultPredictor:
     """
     Create a simple end-to-end predictor with the given config that runs on
@@ -215,15 +207,9 @@ class DefaultPredictor:
         self.cfg = cfg.clone()  # cfg can be modified by model
         self.model = build_model(self.cfg)
         self.model.eval()
-        if len(cfg.DATASETS.TEST):
-            self.metadata = MetadataCatalog.get(cfg.DATASETS.TEST[0])
 
         checkpointer = DetectionCheckpointer(self.model)
         checkpointer.load(cfg.MODEL.WEIGHTS)
-
-        self.aug = T.ResizeShortestEdge(
-            [cfg.INPUT.MIN_SIZE_TEST, cfg.INPUT.MIN_SIZE_TEST], cfg.INPUT.MAX_SIZE_TEST
-        )
 
         self.input_format = cfg.INPUT.FORMAT
         assert self.input_format in ["RGB", "BGR"], self.input_format
@@ -251,7 +237,7 @@ class DefaultPredictor:
             predictions = self.model([inputs])[0]
             return predictions
 
-
+# todo need construction
 class DefaultTrainer(TrainerBase):
     """
     A trainer with default training logic. It does the following:
@@ -433,7 +419,7 @@ class DefaultTrainer(TrainerBase):
             assert hasattr(
                 self, "_last_eval_results"
             ), "No evaluation results obtained during training!"
-            verify_results(self.cfg, self._last_eval_results)
+            # verify_results(self.cfg, self._last_eval_results)
             return self._last_eval_results
 
     def run_step(self):

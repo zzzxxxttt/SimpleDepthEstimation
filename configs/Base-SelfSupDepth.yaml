@@ -1,0 +1,67 @@
+MODEL:
+  META_ARCHITECTURE: "SelfSupDepthModel"
+  DEPTH_NET:
+    NAME: "DepthResNet"
+    ENCODER_NAME: "50pt"
+  #    NAME: "BtsModel"
+  #    ENCODER_NAME: "resnet50_bts"
+  #    BTS_SIZE: 512
+  POSE_NET:
+    NAME: "PoseNet"
+    NUM_CONTEXTS: 2
+LOSS:
+  SSIM_WEIGHT: 0.85
+  C1: 0.0001
+  C2: 0.0009
+  CLIP: 0.0
+  AUTOMASK: True
+  SMOOTHNESS_WEIGHT: 0.001
+  PHOTOMETRIC_REDUCE: 'min'
+  SUPERVISED_WEIGHT: 0.5
+  VARIANCE_FOCUS: 0.85
+DATASETS:
+  TRAIN:
+    NAME: "KittiDepthTrain_v2"
+    DATA_ROOT: "/data/data/KITTI/KITTI_raw"
+    DEPTH_ROOT: "/data/data/KITTI/KITTI_raw"
+    SPLIT: ""
+    IMG_WIDTH: 640
+    IMG_HEIGHT: 192
+    KB_CROP: False
+    RESIZE: True
+    WITH_POSE: False
+    WITH_DEPTH: True
+    FORWARD_CONTEXT: 1
+    BACKWARD_CONTEXT: 1
+    STRIDE: 1
+  TEST:
+    NAME: "KittiDepthVal_v2"
+    DATA_ROOT: "/data/data/KITTI/KITTI_raw"
+    DEPTH_ROOT: "/data/data/KITTI/KITTI_raw"
+    SPLIT: ""
+    IMG_WIDTH: 640
+    IMG_HEIGHT: 192
+    KB_CROP: False
+    RESIZE: True
+    WITH_POSE: False
+    WITH_DEPTH: True
+    FORWARD_CONTEXT: 0
+    BACKWARD_CONTEXT: 0
+    STRIDE: 0
+SOLVER:
+  IMS_PER_BATCH: 32
+  DEPTH_LR: 0.0002
+  POSE_LR: 0.0002
+  LR_STEPS: (10,)
+  GAMMA: 0.5
+  MAX_EPOCHS: 20
+  CHECKPOINT_PERIOD: 1
+EVALUATORS: (
+  "kitti_evaluator",
+  "kitti_evaluator_0_30",
+  "kitti_evaluator_30_50",
+  "kitti_evaluator_50_80"
+  )
+TEST:
+  GT_SCALE: True
+VERSION: 2

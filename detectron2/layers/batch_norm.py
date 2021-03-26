@@ -8,8 +8,7 @@ from torch.nn import functional as F
 
 from detectron2.utils import comm, env
 
-from .wrappers import BatchNorm2d
-
+BatchNorm2d = torch.nn.BatchNorm2d
 
 class FrozenBatchNorm2d(nn.Module):
     """
@@ -19,14 +18,14 @@ class FrozenBatchNorm2d(nn.Module):
     "weight" and "bias", "running_mean", "running_var",
     initialized to perform identity transformation.
 
-    The pre-trained backbone models from Caffe2 only contain "weight" and "bias",
+    The pre-trained depth_net models from Caffe2 only contain "weight" and "bias",
     which are computed from the original four parameters of BN.
     The affine transform `x * weight + bias` will perform the equivalent
     computation of `(x - running_mean) / sqrt(running_var) * weight + bias`.
-    When loading a backbone model from Caffe2, "running_mean" and "running_var"
+    When loading a depth_net model from Caffe2, "running_mean" and "running_var"
     will be left unchanged as identity transformation.
 
-    Other pre-trained backbone models may contain all 4 parameters.
+    Other pre-trained depth_net models may contain all 4 parameters.
 
     The forward is implemented by `F.batch_norm(..., training=False)`.
     """

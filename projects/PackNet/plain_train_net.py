@@ -25,7 +25,6 @@ import math
 from collections import OrderedDict
 import torch
 from torch.nn.parallel import DistributedDataParallel
-
 import detectron2.utils.comm as comm
 from detectron2.checkpoint import DetectionCheckpointer, PeriodicCheckpointer
 from detectron2.config import CfgNode as CN
@@ -51,6 +50,53 @@ def add_config(cfg):
     """
     _C = cfg
 
+    _C.SOLVER.DEPTH_LR = 1e-5
+    _C.SOLVER.POSE_LR = 1e-5
+    _C.SOLVER.LR_STEPS = (10,)
+    _C.SOLVER.GAMMA = 0.5
+
+    # `True` if cropping is used for data augmentation during training
+    _C.DATASETS.TRAIN.DEPTH_ROOT = ""
+    _C.DATASETS.TRAIN.KB_CROP = False
+    _C.DATASETS.TRAIN.RESIZE = False
+    _C.DATASETS.TRAIN.WITH_POSE = False
+    _C.DATASETS.TRAIN.WITH_DEPTH = False
+    _C.DATASETS.TRAIN.FORWARD_CONTEXT = 0
+    _C.DATASETS.TRAIN.BACKWARD_CONTEXT = 0
+    _C.DATASETS.TRAIN.STRIDE = 0
+
+    _C.DATASETS.TEST.DEPTH_ROOT = ""
+    _C.DATASETS.TEST.KB_CROP = False
+    _C.DATASETS.TEST.RESIZE = False
+    _C.DATASETS.TEST.WITH_POSE = False
+    _C.DATASETS.TEST.WITH_DEPTH = False
+    _C.DATASETS.TEST.FORWARD_CONTEXT = 0
+    _C.DATASETS.TEST.BACKWARD_CONTEXT = 0
+    _C.DATASETS.TEST.STRIDE = 0
+
+    _C.MODEL.DEPTH_NET.ENCODER_NAME = "resnet50_bts"
+    _C.MODEL.DEPTH_NET.BTS_SIZE = 512
+    _C.MODEL.DATASET = "kitti"
+    _C.MODEL.BN_NO_TRACK = False
+    _C.MODEL.FIX_1ST_CONV = False
+    _C.MODEL.FIX_1ST_CONVS = False
+
+    _C.MODEL.POSE_NET = CN()
+    _C.MODEL.POSE_NET.NAME = ''
+    _C.MODEL.POSE_NET.NUM_CONTEXTS = 0
+
+    _C.LOSS.SSIM_WEIGHT = 0.0
+    _C.LOSS.C1 = 0.0
+    _C.LOSS.C2 = 0.0
+    _C.LOSS.CLIP = 0.0
+    _C.LOSS.AUTOMASK = True
+    _C.LOSS.SMOOTHNESS_WEIGHT = 0.0
+    _C.LOSS.PHOTOMETRIC_REDUCE = 'min'
+    _C.LOSS.SUPERVISED_WEIGHT = 0.0
+    _C.LOSS.VARIANCE_FOCUS = 0.85
+
+    _C.TEST.GT_SCALE = False
+
 
 def get_evaluator(cfg, output_folder=None):
     """
@@ -68,7 +114,7 @@ def get_evaluator(cfg, output_folder=None):
 
 
 def do_test(cfg, model):
-    data_loader = build_detection_test_loader(cfg, cfg.DATASETS.TEST)
+    data_loader = build_detection_test_loader(cfg)
     evaluator = get_evaluator(cfg, os.path.join(cfg.OUTPUT_DIR, "inference", cfg.DATASETS.TEST))
     results = inference_on_dataset(model, data_loader, evaluator)
     # if comm.is_main_process():
@@ -80,10 +126,21 @@ def do_test(cfg, model):
 def do_train(cfg, model, resume=False):
     model.train()
 
-    data_loader = build_detection_train_loader(cfg, cfg.DATASETS.TRAIN)
+    data_loader = build_detection_train_loader(cfg)
 
-    optimizer = build_optimizer(cfg, model)
-    # scheduler = build_lr_scheduler(cfg, optimizer)
+    optimizer = torch.optim.AdamW([{'name': 'Depth',
+                                    'params': model.module.depth_net.parameters(),
+                                    'lr': cfg.SOLVER.DEPTH_LR,
+                                    'weight_decay': 0.0},
+                                   {'name': 'Pose',
+                                    'params': model.module.pose_net.parameters(),
+                                    'lr': cfg.SOLVER.DEPTH_LR,
+                                    'weight_decay': 0.0}], eps=1e-6)
+    # Training parameters
+
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
+                                                     milestones=cfg.SOLVER.LR_STEPS,
+                                                     gamma=cfg.SOLVER.GAMMA)
 
     checkpointer = \
         DetectionCheckpointer(model, cfg.OUTPUT_DIR, optimizer=optimizer)
@@ -128,11 +185,11 @@ def do_train(cfg, model, resume=False):
                 optimizer.step()
                 storage.put_scalar("lr", optimizer.param_groups[0]["lr"], smoothing_hint=False)
 
-                # scheduler.step()
-
                 if (global_step + 1) % cfg.LOG_PERIOD == 0:
                     for writer in writers:
                         writer.write()
+
+            scheduler.step()
 
             if cfg.TEST.EVAL_PERIOD > 0 and (epoch + 1) % cfg.TEST.EVAL_PERIOD == 0:
                 do_test(cfg, model)

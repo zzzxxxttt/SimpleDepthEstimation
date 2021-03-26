@@ -1,0 +1,49 @@
+MODEL:
+  META_ARCHITECTURE: "SupDepthModel"
+  DEPTH_NET:
+    NAME: "BtsModel"
+    ENCODER_NAME: "resnet50_bts"
+    BTS_SIZE: 512
+LOSS:
+  VARIANCE_FOCUS: 0.85
+DATASETS:
+  TRAIN:
+    NAME: "KittiDepthTrain_v2"
+    DATA_ROOT: "/data/data/KITTI/KITTI_raw"
+    DEPTH_ROOT: "/data/data/KITTI/KITTI_raw"
+    SPLIT: ""
+    IMG_WIDTH: 640
+    IMG_HEIGHT: 192
+    KB_CROP: True
+    RESIZE: False
+    WITH_POSE: False
+    WITH_DEPTH: True
+    FORWARD_CONTEXT: 0
+    BACKWARD_CONTEXT: 0
+    STRIDE: 0
+  TEST:
+    NAME: "KittiDepthVal_v2"
+    DATA_ROOT: "/data/data/KITTI/KITTI_raw"
+    DEPTH_ROOT: "/data/data/KITTI/KITTI_raw"
+    SPLIT: ""
+    IMG_WIDTH: 640
+    IMG_HEIGHT: 192
+    KB_CROP: True
+    RESIZE: False
+    WITH_POSE: False
+    WITH_DEPTH: True
+    FORWARD_CONTEXT: 0
+    BACKWARD_CONTEXT: 0
+    STRIDE: 0
+SOLVER:
+  IMS_PER_BATCH: 16
+  DEPTH_LR: 0.0001
+  MAX_EPOCHS: 30
+  CHECKPOINT_PERIOD: 1
+EVALUATORS: (
+  "kitti_evaluator",
+  "kitti_evaluator_0_30",
+  "kitti_evaluator_30_50",
+  "kitti_evaluator_50_80"
+  )
+VERSION: 2

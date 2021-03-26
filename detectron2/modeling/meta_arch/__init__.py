@@ -2,7 +2,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 
 from .build import META_ARCH_REGISTRY, build_model  # isort:skip
-from .semantic_seg import SEM_SEG_HEADS_REGISTRY, SemanticSegmentor, build_sem_seg_head
-
+from .SupDepth import SupDepthModel
+from .SelfSupDepth import SelfSupDepthModel
 
 __all__ = list(globals().keys())

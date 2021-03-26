@@ -10,6 +10,19 @@ from torch import nn
 from detectron2.utils.comm import get_world_size, is_main_process
 from detectron2.utils.logger import log_every_n_seconds
 
+from detectron2.utils.registry import Registry
+
+EVALUATOR_REGISTRY = Registry("EVALUATOR")
+EVALUATOR_REGISTRY.__doc__ = """
+Registry for datasets
+"""
+
+
+def build_evaluator(cfg, ouput_folder):
+    evaluators = [EVALUATOR_REGISTRY.get(eval_type)(cfg, ouput_folder) for eval_type in cfg.EVALUATORS]
+    assert all(isinstance(evaluator, DatasetEvaluator) for evaluator in evaluators)
+    return evaluators
+
 
 class DatasetEvaluator:
     """
@@ -93,7 +106,7 @@ class DatasetEvaluators(DatasetEvaluator):
             if is_main_process() and result is not None:
                 for k, v in result.items():
                     assert (
-                        k not in results
+                            k not in results
                     ), "Different evaluators produce results with the same key {}".format(k)
                     results[k] = v
         return results

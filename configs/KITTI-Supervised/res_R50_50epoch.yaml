@@ -1,0 +1,24 @@
+_BASE_: "../Base-SupDepth.yaml"
+
+MODEL:
+  DEPTH_NET:
+    NAME: "DepthResNet"
+    ENCODER_NAME: "18pt"
+DATASETS:
+  TRAIN:
+    NAME: "kitti_depth_train"
+    DATA_ROOT: "C:\\Users\\doge\\Downloads\\kitti"
+    DEPTH_ROOT: "C:\\Users\\doge\\Downloads\\kitti"
+    SPLIT: "C:\\Users\\doge\\Downloads\\kitti\\splits\\eigen_train_gt.txt"
+    IMG_WIDTH: 256
+    IMG_HEIGHT: 128
+  TEST:
+    NAME: "kitti_depth_val"
+    DATA_ROOT: "C:\\Users\\doge\\Downloads\\kitti"
+    DEPTH_ROOT: "C:\\Users\\doge\\Downloads\\kitti"
+    SPLIT: "C:\\Users\\doge\\Downloads\\kitti\\splits\\eigen_train_gt.txt"
+    IMG_WIDTH: 256
+    IMG_HEIGHT: 128
+SOLVER:
+  IMS_PER_BATCH: 2
+LOG_PERIOD: 1
