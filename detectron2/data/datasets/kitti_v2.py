@@ -9,135 +9,8 @@ import torch.utils.data.distributed
 from torchvision import transforms
 
 from detectron2.data.build import DATASET_REGISTRY, DatasetBase
-from ...geometry.camera import resize_depth_np
-
-
-def kb_crop(data):
-    top_margin = int(data['image'].shape[0] - 352)
-    left_margin = int((data['image'].shape[1] - 1216) / 2)
-    data['image'] = data['image'][top_margin:top_margin + 352, left_margin:left_margin + 1216]
-
-    data['intrinsics'][0, 2] -= left_margin
-    data['intrinsics'][1, 2] -= top_margin
-
-    if 'depth_gt' in data:
-        data['depth_gt'] = data['depth_gt'][top_margin:top_margin + 352, left_margin:left_margin + 1216]
-
-    if 'context' in data:
-        data['context'] = [img[top_margin:top_margin + 352, left_margin:left_margin + 1216]
-                           for img in data['context']]
-
-    data['top_margin'] = top_margin
-    data['left_margin'] = left_margin
-    return data
-
-
-def resize(data, img_h, img_w):
-    H, W, _ = data['image'].shape
-    data['image'] = cv2.resize(data['image'], (img_w, img_h))
-
-    data['intrinsics'][0, 0] *= img_w / W
-    data['intrinsics'][0, 2] *= img_w / W
-    data['intrinsics'][1, 1] *= img_h / H
-    data['intrinsics'][1, 2] *= img_h / H
-
-    if 'context' in data:
-        data['context'] = [cv2.resize(img, (img_w, img_h)) for img in data['context']]
-
-    if 'depth_gt' in data:
-        data['depth_gt'] = resize_depth_np(data['depth_gt'], (img_h, img_w))
-
-    return data
-
-
-def random_crop(data, height, width):
-    assert data['image'].shape[0] >= height
-    assert data['image'].shape[1] >= width
-    x = random.randint(0, data['image'].shape[1] - width)
-    y = random.randint(0, data['image'].shape[0] - height)
-    data['image'] = data['image'][y:y + height, x:x + width, :]
-
-    data['intrinsics'][0, 2] -= x
-    data['intrinsics'][1, 2] -= y
-
-    if 'context' in data:
-        data['context'] = [img[y:y + height, x:x + width, :] for img in data['context']]
-
-    if 'depth_gt' in data:
-        data['depth_gt'] = data['depth_gt'][y:y + height, x:x + width]
-
-    return data
-
-
-def flip(data):
-    data['image'] = data['image'][:, ::-1, :].copy()
-
-    if 'context' in data:
-        data['context'] = [img[:, ::-1, :].copy() for img in data['context']]
-
-    if 'depth_gt' in data:
-        data['depth_gt'] = data['depth_gt'][:, ::-1].copy()
-
-    data['flip'] = True
-
-    return data
-
-
-def image_augment(image, gamma, brightness, colors):
-    # gamma augmentation
-    image = image ** gamma
-
-    # brightness augmentation
-    image = image * brightness
-
-    # color augmentation
-    white = np.ones((image.shape[0], image.shape[1]))
-    color_image = np.stack([white * colors[i] for i in range(3)], axis=2)
-    image *= color_image
-    image = np.clip(image, 0, 1)
-
-    return image
-
-
-def random_image_augment(data):
-    gamma = random.uniform(0.9, 1.1)
-    brightness = random.uniform(0.9, 1.1)
-    colors = np.random.uniform(0.9, 1.1, size=3)
-
-    data['image'] = image_augment(data['image'], gamma, brightness, colors)
-
-    if 'context' in data:
-        data['context'] = [image_augment(img, gamma, brightness, colors) for img in data['context']]
-
-    return data
-
-
-def read_img(filepath):
-    img = cv2.imread(filepath)
-    assert img is not None, f'{filepath}'
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    return img.astype(np.float32) / 255
-
-
-def read_npz_depth(file):
-    depth = np.load(file)['velodyne_depth']
-    return depth.astype(np.float32) / 256
-
-
-def read_calib_file(filepath):
-    data = {}
-
-    with open(filepath, 'r') as f:
-        for line in f.readlines():
-            key, value = line.split(':', 1)
-            # The only non-float values in these files are dates, which
-            # we don't care about anyway
-            try:
-                data[key] = np.array([float(x) for x in value.split()])
-            except ValueError:
-                pass
-
-    return data
+from .preprocessing import read_img, read_npz_depth, read_png_depth, read_kitti_calib_file, read_bin
+from .preprocessing import resize, random_crop, random_image_augment, kb_crop, flip
 
 
 @DATASET_REGISTRY.register()
@@ -155,7 +28,7 @@ class KittiDepthTrain_v2(DatasetBase):
         self.resize = dataset_cfg.RESIZE
         self.kb_crop = dataset_cfg.KB_CROP
         self.with_pose = dataset_cfg.WITH_POSE
-        self.with_depth = dataset_cfg.WITH_DEPTH
+        self.depth_type = dataset_cfg.DEPTH_TYPE
 
         self.forward_context = dataset_cfg.FORWARD_CONTEXT
         self.backward_context = dataset_cfg.BACKWARD_CONTEXT
@@ -170,6 +43,17 @@ class KittiDepthTrain_v2(DatasetBase):
             date = line[0].split('/')[0]
             drive = line[0].split('/')[1].replace(f'{date}_drive_', '').replace('_sync', '')
             img_id = line[0].split('/')[-1].replace('.png', '')
+
+            # check file exists
+            if (not os.path.isfile(self._get_img_dir(date, drive, img_id))) \
+                    or (self.depth_type == 'velodyne'
+                        and not os.path.isfile(self._get_npz_depth_dir(date, drive, img_id))) \
+                    or (self.depth_type == 'groundtruth'
+                        and not os.path.isfile(self._get_png_depth_dir(date, drive, img_id))) \
+                    or (self.depth_type == 'refined'
+                        and not os.path.isfile(self._get_refined_png_depth_dir(date, drive, img_id))):
+                continue
+
             self.metadatas.append((date, drive, img_id))
 
         self.metadatas = sorted(self.metadatas, key=lambda x: (x[0], x[1], x[2]))
@@ -200,18 +84,6 @@ class KittiDepthTrain_v2(DatasetBase):
     def __len__(self):
         return len(self.valid_inds)
 
-    def _get_img_dir(self, date, drive, img_id):
-        return os.path.join(self.data_root, date, f'{date}_drive_{drive}_sync',
-                            'image_02', 'data', f'{img_id}.png')
-
-    def _get_npz_depth_dir(self, date, drive, img_id):
-        return os.path.join(self.depth_root, date, f'{date}_drive_{drive}_sync',
-                            'proj_depth', 'velodyne', 'image_02', f'{img_id}.npz')
-
-    def _get_png_depth_dir(self, date, drive, img_id):
-        return os.path.join(self.depth_root, date, f'{date}_drive_{drive}_sync',
-                            'proj_depth', 'groundtruth', 'image_02', f'{img_id}.png')
-
     def __getitem__(self, idx):
         idx = self.valid_inds[idx]
 
@@ -224,22 +96,36 @@ class KittiDepthTrain_v2(DatasetBase):
                 'left_margin': 0}
 
         if date in self.calib_cache:
-            intrinsics = self.calib_cache[date]
+            cam_calib = self.calib_cache[date]['cam_calib']
+            lidar_calib = self.calib_cache[date]['lidar_calib']
         else:
-            intrinsics = read_calib_file(os.path.join(self.data_root, date, 'calib_cam_to_cam.txt'))
-            self.calib_cache[date] = intrinsics
-        data['intrinsics'] = np.array(intrinsics['P_rect_02']).reshape([3, 4])[:3, :3]
+            cam_calib = read_kitti_calib_file(os.path.join(self.data_root, date, 'calib_cam_to_cam.txt'))
+            lidar_calib = read_kitti_calib_file(os.path.join(self.data_root, date, 'calib_velo_to_cam.txt'))
+            self.calib_cache[date] = {'cam_calib': cam_calib,
+                                      'lidar_calib': lidar_calib}
+        P2 = np.eye(4)
+        P2[:3, :] = np.array(cam_calib['P_rect_02']).reshape([3, 4])
+        R0 = np.eye(4)
+        R0[:3, :3] = np.array(cam_calib['R_rect_00']).reshape([3, 3])
+        data['intrinsics'] = P2[:3, :3]
 
-        if self.with_depth:
+        if self.depth_type == 'velodyne':
             data['depth_gt'] = read_npz_depth(self._get_npz_depth_dir(date, drive, img_id))
-            if self.mode == 'val':
-                data['depth_gt_orig'] = data['depth_gt'].copy()
+        elif self.depth_type == 'groundtruth':
+            data['depth_gt'] = read_png_depth(self._get_png_depth_dir(date, drive, img_id))
+        elif self.depth_type == 'refined':
+            data['depth_gt'] = read_png_depth(self._get_refined_png_depth_dir(date, drive, img_id))
+
+        if self.mode == 'val' and 'depth_gt' in data:
+            data['depth_gt_orig'] = data['depth_gt'].copy()
 
         # Add context information if requested
         if self.with_context:
             # Add context images
             data['context'] = [read_img(self._get_img_dir(*self.metadatas[ctx_idx]))
                                for ctx_idx in self.context_list[idx]]
+
+        # data['lidar'] = read_bin(self._get_lidar_dir(date, drive, img_id))
 
         if self.kb_crop:
             data = kb_crop(data)
@@ -266,6 +152,26 @@ class KittiDepthTrain_v2(DatasetBase):
         if 'depth_gt' in data:
             data['depth_gt'] = torch.from_numpy(data['depth_gt'])[None, :, :]
         return data
+
+    def _get_img_dir(self, date, drive, img_id):
+        return os.path.join(self.data_root, date, f'{date}_drive_{drive}_sync',
+                            'image_02', 'data', f'{img_id}.png')
+
+    def _get_npz_depth_dir(self, date, drive, img_id):
+        return os.path.join(self.depth_root, date, f'{date}_drive_{drive}_sync',
+                            'proj_depth', 'velodyne', 'image_02', f'{img_id}.npz')
+
+    def _get_png_depth_dir(self, date, drive, img_id):
+        return os.path.join(self.depth_root, date, f'{date}_drive_{drive}_sync',
+                            'proj_depth', 'groundtruth', 'image_02', f'{img_id}.png')
+
+    def _get_refined_png_depth_dir(self, date, drive, img_id):
+        return os.path.join(self.depth_root, f'{date}_drive_{drive}_sync',
+                            'proj_depth', 'velodyne', 'image_02', f'{img_id}.png')
+
+    def _get_lidar_dir(self, date, drive, img_id):
+        return os.path.join(self.depth_root, f'{date}_drive_{drive}_sync',
+                            'velodyne_points', 'data', f'{img_id}.bin')
 
 
 @DATASET_REGISTRY.register()

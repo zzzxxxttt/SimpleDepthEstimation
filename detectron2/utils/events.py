@@ -255,7 +255,7 @@ class CommonMetricPrinter(EventWriter):
         eta_str = f"eta: {eta_string}" if eta_string else ""
         epoch_str = f"[{storage.epoch:0{len(str(storage.max_epoch))}d}/{storage.max_epoch}]"
         iter_str = f"[{storage.epoch_iter:0{len(str(storage.max_epoch_iter))}d}/{storage.max_epoch_iter}]"
-        loss_str = "  ".join([f"{k}: {v.median(self._window_size):.4g}"
+        loss_str = "  ".join([f"{k}: {v.median(self._window_size):.4f}"
                               for k, v in storage.histories().items() if "loss" in k])
         time_str = f"time: {iter_time:.4f}" if iter_time is not None else ""
         data_time_str = f"data_time: {data_time:.4f}" if data_time is not None else ""

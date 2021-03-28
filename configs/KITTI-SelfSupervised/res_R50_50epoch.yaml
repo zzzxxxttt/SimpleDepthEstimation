@@ -19,6 +19,8 @@ DATASETS:
     SPLIT: "C:\\Users\\doge\\Downloads\\kitti\\splits\\eigen_test_gt.txt"
     IMG_WIDTH: 256
     IMG_HEIGHT: 128
+DATALOADER:
+  NUM_WORKERS: 0
 SOLVER:
   IMS_PER_BATCH: 2
 LOG_PERIOD: 1

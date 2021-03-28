@@ -5,6 +5,7 @@ from .build import DEPTH_NET_REGISTRY
 
 from ...layers.resnet_encoder import ResnetEncoder
 from ...layers.depth_decoder import DepthDecoder, disp_to_depth
+from ...geometry.camera import resize_img
 
 
 @DEPTH_NET_REGISTRY.register()
@@ -36,6 +37,8 @@ class DepthResNet(nn.Module):
         self.decoder = DepthDecoder(num_ch_enc=self.encoder.num_ch_enc)
         self.scale_inv_depth = partial(disp_to_depth, min_depth=0.1, max_depth=cfg.MODEL.MAX_DEPTH)
 
+        self.upsample_depth = cfg.MODEL.DEPTH_NET.UPSAMPLE_DEPTH
+
     def forward(self, data):
         """
         Runs the network and returns inverse depth maps
@@ -43,7 +46,10 @@ class DepthResNet(nn.Module):
         """
         x = self.encoder(data['image'])
         x = self.decoder(x)
-        disps = [self.scale_inv_depth(x[('disp', i)])[0] for i in range(4)]
+        disps = [self.scale_inv_depth(x[('disp', i)])[1] for i in range(4)]
+
+        if self.upsample_depth:
+            disps = [resize_img(d, data['image'].shape[-2:], mode='nearest') for d in disps]
 
         return {'res2': disps[3],
                 'res3': disps[2],

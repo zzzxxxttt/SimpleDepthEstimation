@@ -27,18 +27,6 @@ def resize_img(image, dst_size, mode='bilinear'):
         return resized_image
 
 
-def resize_depth_np(depth, dst_size):
-    if depth.shape[-2] == dst_size[-2] and depth.shape[-1] == dst_size[-1]:
-        return depth
-    else:
-        H, W = depth.shape
-        y, x = np.nonzero(depth)
-        resized_depth = np.zeros(dst_size, dtype=np.float32)
-        resized_depth[(dst_size[0] * y / H).astype(np.int),
-                      (dst_size[1] * x / W).astype(np.int)] = depth[y, x]
-        return resized_depth
-
-
 @lru_cache(maxsize=None)
 def meshgrid(B, H, W, dtype, device, normalized=False):
     """

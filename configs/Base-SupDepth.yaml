@@ -17,7 +17,7 @@ DATASETS:
     KB_CROP: True
     RESIZE: False
     WITH_POSE: False
-    WITH_DEPTH: True
+    DEPTH_TYPE: "refined"
     FORWARD_CONTEXT: 0
     BACKWARD_CONTEXT: 0
     STRIDE: 0
@@ -31,7 +31,7 @@ DATASETS:
     KB_CROP: True
     RESIZE: False
     WITH_POSE: False
-    WITH_DEPTH: True
+    DEPTH_TYPE: "refined"
     FORWARD_CONTEXT: 0
     BACKWARD_CONTEXT: 0
     STRIDE: 0

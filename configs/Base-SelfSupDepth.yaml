@@ -6,6 +6,7 @@ MODEL:
   #    NAME: "BtsModel"
   #    ENCODER_NAME: "resnet50_bts"
   #    BTS_SIZE: 512
+    UPSAMPLE_DEPTH: True
   POSE_NET:
     NAME: "PoseNet"
     NUM_CONTEXTS: 2
@@ -30,7 +31,7 @@ DATASETS:
     KB_CROP: False
     RESIZE: True
     WITH_POSE: False
-    WITH_DEPTH: True
+    DEPTH_TYPE: "none"
     FORWARD_CONTEXT: 1
     BACKWARD_CONTEXT: 1
     STRIDE: 1
@@ -44,7 +45,7 @@ DATASETS:
     KB_CROP: False
     RESIZE: True
     WITH_POSE: False
-    WITH_DEPTH: True
+    DEPTH_TYPE: "refined"
     FORWARD_CONTEXT: 0
     BACKWARD_CONTEXT: 0
     STRIDE: 0

@@ -57,7 +57,7 @@ def add_config(cfg):
     _C.DATASETS.TRAIN.KB_CROP = False
     _C.DATASETS.TRAIN.RESIZE = False
     _C.DATASETS.TRAIN.WITH_POSE = False
-    _C.DATASETS.TRAIN.WITH_DEPTH = False
+    _C.DATASETS.TRAIN.DEPTH_TYPE = "none"
     _C.DATASETS.TRAIN.FORWARD_CONTEXT = 0
     _C.DATASETS.TRAIN.BACKWARD_CONTEXT = 0
     _C.DATASETS.TRAIN.STRIDE = 0
@@ -66,17 +66,18 @@ def add_config(cfg):
     _C.DATASETS.TEST.KB_CROP = False
     _C.DATASETS.TEST.RESIZE = False
     _C.DATASETS.TEST.WITH_POSE = False
-    _C.DATASETS.TEST.WITH_DEPTH = False
+    _C.DATASETS.TEST.DEPTH_TYPE = "refined"
     _C.DATASETS.TEST.FORWARD_CONTEXT = 0
     _C.DATASETS.TEST.BACKWARD_CONTEXT = 0
     _C.DATASETS.TEST.STRIDE = 0
 
+    _C.MODEL.DATASET = "kitti"
     _C.MODEL.DEPTH_NET.ENCODER_NAME = "resnet50_bts"
     _C.MODEL.DEPTH_NET.BTS_SIZE = 512
-    _C.MODEL.DATASET = "kitti"
-    _C.MODEL.BN_NO_TRACK = False
-    _C.MODEL.FIX_1ST_CONV = False
-    _C.MODEL.FIX_1ST_CONVS = False
+    _C.MODEL.DEPTH_NET.UPSAMPLE_DEPTH = False
+    _C.MODEL.DEPTH_NET.BN_NO_TRACK = False
+    _C.MODEL.DEPTH_NET.FIX_1ST_CONV = False
+    _C.MODEL.DEPTH_NET.FIX_1ST_CONVS = False
 
     _C.LOSS.VARIANCE_FOCUS = 0.85
 
@@ -100,7 +101,7 @@ def get_evaluator(cfg, output_folder=None):
 
 def do_test(cfg, model):
     data_loader = build_detection_test_loader(cfg)
-    evaluator = get_evaluator(cfg, os.path.join(cfg.OUTPUT_DIR, "inference", cfg.DATASETS.TEST))
+    evaluator = get_evaluator(cfg, os.path.join(cfg.OUTPUT_DIR, "inference", cfg.DATASETS.TEST.NAME))
     results = inference_on_dataset(model, data_loader, evaluator)
     # if comm.is_main_process():
     #   logger.info("Evaluation results for {} in csv format:".format(dataset_name))

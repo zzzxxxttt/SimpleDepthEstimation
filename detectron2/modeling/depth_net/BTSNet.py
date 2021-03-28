@@ -342,7 +342,10 @@ class BtsModel(nn.Module):
                            self.encoder.feat_out_channels, cfg.MODEL.DEPTH_NET.BTS_SIZE)
         self.decoder.apply(weights_init_xavier)
 
-        set_misc(self, cfg.MODEL.BN_NO_TRACK, cfg.MODEL.FIX_1ST_CONV, cfg.MODEL.FIX_1ST_CONVS)
+        set_misc(self,
+                 cfg.MODEL.DEPTH_NET.BN_NO_TRACK,
+                 cfg.MODEL.DEPTH_NET.FIX_1ST_CONV,
+                 cfg.MODEL.DEPTH_NET.FIX_1ST_CONVS)
 
     def forward(self, data):
         skip_feat = self.encoder(data['image'])

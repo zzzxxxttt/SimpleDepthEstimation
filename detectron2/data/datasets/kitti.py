@@ -11,7 +11,7 @@ from torch.utils.data.dataloader import default_collate
 from torchvision import transforms
 
 from detectron2.data.build import DATASET_REGISTRY
-from ...geometry.camera import resize_depth_np
+from .preprocessing import resize_depth_np
 
 
 def random_crop(img, depth, height, width):

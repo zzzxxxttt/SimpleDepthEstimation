@@ -77,8 +77,9 @@ class kitti_evaluator(DatasetEvaluator):
             elif self.eigen_crop:
                 pred, gt = eigen_crop(pred, gt)
 
+            valid_mask = np.logical_and(gt > 1e-3, gt < 80)
             if self.use_gt_scale:
-                pred = pred * np.median(gt) / np.median(pred)
+                pred = pred * np.median(gt[valid_mask]) / np.median(pred[valid_mask])
 
             # pred[pred < self.min_depth] = self.min_depth
             # pred[pred > self.max_depth] = self.max_depth
