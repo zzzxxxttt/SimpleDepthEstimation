@@ -10,7 +10,7 @@ DATASETS:
   TRAIN:
     NAME: "KittiDepthTrain_v2"
     DATA_ROOT: "/data/data/KITTI/KITTI_raw"
-    DEPTH_ROOT: "/data/data/KITTI/KITTI_raw"
+    DEPTH_ROOT: "/data/data/KITTI/kitti_depth_merged"
     SPLIT: ""
     IMG_WIDTH: 640
     IMG_HEIGHT: 192
@@ -24,7 +24,7 @@ DATASETS:
   TEST:
     NAME: "KittiDepthVal_v2"
     DATA_ROOT: "/data/data/KITTI/KITTI_raw"
-    DEPTH_ROOT: "/data/data/KITTI/KITTI_raw"
+    DEPTH_ROOT: "/data/data/KITTI/kitti_depth_merged"
     SPLIT: ""
     IMG_WIDTH: 640
     IMG_HEIGHT: 192

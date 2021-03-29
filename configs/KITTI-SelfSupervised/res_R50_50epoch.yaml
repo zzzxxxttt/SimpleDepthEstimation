@@ -1,26 +1,26 @@
 _BASE_: "../Base-SelfSupDepth.yaml"
 
-MODEL:
-  DEPTH_NET:
-    NAME: "DepthResNet"
-    ENCODER_NAME: "18pt"
-DATASETS:
-  TRAIN:
-    NAME: "KittiDepthTrain_v2"
-    DATA_ROOT: "C:\\Users\\doge\\Downloads\\kitti"
-    DEPTH_ROOT: "C:\\Users\\doge\\Downloads\\kitti"
-    SPLIT: "C:\\Users\\doge\\Downloads\\kitti\\splits\\eigen_train_gt.txt"
-    IMG_WIDTH: 256
-    IMG_HEIGHT: 128
-  TEST:
-    NAME: "KittiDepthVal_v2"
-    DATA_ROOT: "C:\\Users\\doge\\Downloads\\kitti"
-    DEPTH_ROOT: "C:\\Users\\doge\\Downloads\\kitti"
-    SPLIT: "C:\\Users\\doge\\Downloads\\kitti\\splits\\eigen_test_gt.txt"
-    IMG_WIDTH: 256
-    IMG_HEIGHT: 128
-DATALOADER:
-  NUM_WORKERS: 0
-SOLVER:
-  IMS_PER_BATCH: 2
-LOG_PERIOD: 1
+#MODEL:
+#  DEPTH_NET:
+#    NAME: "DepthResNet"
+#    ENCODER_NAME: "18pt"
+#DATASETS:
+#  TRAIN:
+#    NAME: "KittiDepthTrain_v2"
+#    DATA_ROOT: "C:\\Users\\doge\\Downloads\\kitti"
+#    DEPTH_ROOT: "C:\\Users\\doge\\Downloads\\kitti"
+#    SPLIT: "C:\\Users\\doge\\Downloads\\kitti\\splits\\eigen_train_gt.txt"
+#    IMG_WIDTH: 256
+#    IMG_HEIGHT: 128
+#  TEST:
+#    NAME: "KittiDepthVal_v2"
+#    DATA_ROOT: "C:\\Users\\doge\\Downloads\\kitti"
+#    DEPTH_ROOT: "C:\\Users\\doge\\Downloads\\kitti"
+#    SPLIT: "C:\\Users\\doge\\Downloads\\kitti\\splits\\eigen_test_gt.txt"
+#    IMG_WIDTH: 256
+#    IMG_HEIGHT: 128
+#DATALOADER:
+#  NUM_WORKERS: 0
+#SOLVER:
+#  IMS_PER_BATCH: 2
+LOG_PERIOD: 20

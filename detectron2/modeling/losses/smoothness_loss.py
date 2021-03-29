@@ -71,7 +71,7 @@ def cal_smoothness_loss(depth, image):
     smoothness_y : list of torch.Tensor [B,1,H,W]
         Smoothness values in direction y
     """
-    inv_depth = 1 / depth
+    inv_depth = 1. / depth.clamp(min=1e-6)
 
     inv_depths_norm = inv_depths_normalize(inv_depth)
     inv_depth_gradients_x = gradient_x(inv_depths_norm)

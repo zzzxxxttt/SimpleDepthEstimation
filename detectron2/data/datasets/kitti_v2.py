@@ -1,6 +1,5 @@
 import os
-import cv2
-import random
+import logging
 import numpy as np
 
 import torch
@@ -11,6 +10,8 @@ from torchvision import transforms
 from detectron2.data.build import DATASET_REGISTRY, DatasetBase
 from .preprocessing import read_img, read_npz_depth, read_png_depth, read_kitti_calib_file, read_bin
 from .preprocessing import resize, random_crop, random_image_augment, kb_crop, flip
+
+logger = logging.getLogger(__name__)
 
 
 @DATASET_REGISTRY.register()
@@ -58,6 +59,8 @@ class KittiDepthTrain_v2(DatasetBase):
 
         self.metadatas = sorted(self.metadatas, key=lambda x: (x[0], x[1], x[2]))
 
+        logger.info(f'Loaded {len(self.metadatas)} samples')
+
         # If using context, filter file list
         self.context_list = [[] for _ in range(len(self.metadatas))]
         self.with_context = self.backward_context != 0 or self.forward_context != 0
@@ -79,6 +82,8 @@ class KittiDepthTrain_v2(DatasetBase):
         else:
             self.valid_inds = list(range(len(self.metadatas)))
 
+        logger.info(f'After context filtering, {len(self.valid_inds)} samples left')
+
         self.calib_cache = {}
 
     def __len__(self):
@@ -91,7 +96,6 @@ class KittiDepthTrain_v2(DatasetBase):
 
         data = {'metadata': {'date': date, 'drive': drive, 'img_id': img_id},
                 'image': read_img(self._get_img_dir(date, drive, img_id)),
-                'flip': False,
                 'top_margin': 0,
                 'left_margin': 0}
 
@@ -138,19 +142,24 @@ class KittiDepthTrain_v2(DatasetBase):
         elif self.mode == 'train':
             data = random_crop(data, self.input_h, self.input_w)
 
-        # Random flipping
-        if self.mode == 'train' and random.random() > 0.5:
-            data = flip(data)
+        if self.mode == 'train':
+            data = flip(data)  # Random flipping
 
-        # Random gamma, brightness, color augmentation
-        if self.mode == 'train' and random.random() > 0.5:
-            data = random_image_augment(data)
+        data['image_orig'] = data['image'].copy()
+        if 'context' in data:
+            data['context_orig'] = [d.copy() for d in data['context']]
+
+        if self.mode == 'train':
+            data = random_image_augment(data)  # Random gamma, brightness, color augmentation
 
         data['image'] = self.to_tensor(data['image'])
+        data['image_orig'] = self.to_tensor(data['image_orig'])
         if 'context' in data:
             data['context'] = [self.to_tensor(img) for img in data['context']]
+            data['context_orig'] = [self.to_tensor(img) for img in data['context_orig']]
         if 'depth_gt' in data:
             data['depth_gt'] = torch.from_numpy(data['depth_gt'])[None, :, :]
+
         return data
 
     def _get_img_dir(self, date, drive, img_id):
@@ -167,7 +176,7 @@ class KittiDepthTrain_v2(DatasetBase):
 
     def _get_refined_png_depth_dir(self, date, drive, img_id):
         return os.path.join(self.depth_root, f'{date}_drive_{drive}_sync',
-                            'proj_depth', 'velodyne', 'image_02', f'{img_id}.png')
+                            'proj_depth', 'groundtruth', 'image_02', f'{img_id}.png')
 
     def _get_lidar_dir(self, date, drive, img_id):
         return os.path.join(self.depth_root, f'{date}_drive_{drive}_sync',

@@ -68,8 +68,8 @@ def get_evaluator(cfg, output_folder=None):
 
 
 def do_test(cfg, model):
-    data_loader = build_detection_test_loader(cfg, cfg.DATASETS.TEST)
-    evaluator = get_evaluator(cfg, os.path.join(cfg.OUTPUT_DIR, "inference", cfg.DATASETS.TEST))
+    data_loader = build_detection_test_loader(cfg)
+    evaluator = get_evaluator(cfg, os.path.join(cfg.OUTPUT_DIR, "inference", cfg.DATASETS.TEST.NAME))
     results = inference_on_dataset(model, data_loader, evaluator)
     # if comm.is_main_process():
     #   logger.info("Evaluation results for {} in csv format:".format(dataset_name))
@@ -80,10 +80,10 @@ def do_test(cfg, model):
 def do_train(cfg, model, resume=False):
     model.train()
 
-    data_loader = build_detection_train_loader(cfg, cfg.DATASETS.TRAIN)
+    data_loader = build_detection_train_loader(cfg)
 
     optimizer = build_optimizer(cfg, model)
-    # scheduler = build_lr_scheduler(cfg, optimizer)
+    scheduler = build_lr_scheduler(cfg, optimizer)
 
     checkpointer = \
         DetectionCheckpointer(model, cfg.OUTPUT_DIR, optimizer=optimizer)
@@ -130,7 +130,7 @@ def do_train(cfg, model, resume=False):
 
                 # scheduler.step()
 
-                if (global_step + 1) % cfg.LOG_PERIOD == 0:
+                if (epoch_iter + 1) % cfg.LOG_PERIOD == 0:
                     for writer in writers:
                         writer.write()
 

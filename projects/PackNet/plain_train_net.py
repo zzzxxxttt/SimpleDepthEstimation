@@ -186,7 +186,7 @@ def do_train(cfg, model, resume=False):
                 optimizer.step()
                 storage.put_scalar("lr", optimizer.param_groups[0]["lr"], smoothing_hint=False)
 
-                if (global_step + 1) % cfg.LOG_PERIOD == 0:
+                if (epoch_iter + 1) % cfg.LOG_PERIOD == 0:
                     for writer in writers:
                         writer.write()
 

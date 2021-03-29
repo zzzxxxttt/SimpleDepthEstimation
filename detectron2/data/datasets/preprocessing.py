@@ -73,15 +73,19 @@ def random_crop(data, height, width):
 
 
 def flip(data):
-    data['image'] = data['image'][:, ::-1, :].copy()
+    if random.random() > 0.5:
+        data['image'] = data['image'][:, ::-1, :].copy()
 
-    if 'context' in data:
-        data['context'] = [img[:, ::-1, :].copy() for img in data['context']]
+        if 'context' in data:
+            data['context'] = [img[:, ::-1, :].copy() for img in data['context']]
 
-    if 'depth_gt' in data:
-        data['depth_gt'] = data['depth_gt'][:, ::-1].copy()
+        if 'depth_gt' in data:
+            data['depth_gt'] = data['depth_gt'][:, ::-1].copy()
 
-    data['flip'] = True
+        data['flip'] = True
+
+    else:
+        data['flip'] = False
 
     return data
 
@@ -102,15 +106,16 @@ def image_augment(image, gamma, brightness, colors):
     return image
 
 
-def random_image_augment(data):
-    gamma = random.uniform(0.9, 1.1)
-    brightness = random.uniform(0.9, 1.1)
-    colors = np.random.uniform(0.9, 1.1, size=3)
+def random_image_augment(data, p=0.5):
+    if random.random() < p:
+        gamma = random.uniform(0.9, 1.1)
+        brightness = random.uniform(0.9, 1.1)
+        colors = np.random.uniform(0.9, 1.1, size=3)
 
-    data['image'] = image_augment(data['image'], gamma, brightness, colors)
+        data['image'] = image_augment(data['image'], gamma, brightness, colors)
 
-    if 'context' in data:
-        data['context'] = [image_augment(img, gamma, brightness, colors) for img in data['context']]
+        if 'context' in data:
+            data['context'] = [image_augment(img, gamma, brightness, colors) for img in data['context']]
 
     return data
 

@@ -49,7 +49,8 @@ class SelfSupDepthModel(nn.Module):
     def forward(self, batch):
         batch = to_cuda(batch, self.device)
 
-        batch["image"] = (batch["image"] - self.pixel_mean) / self.pixel_std
+        batch['image'] = (batch["image"] - self.pixel_mean) / self.pixel_std
+        batch['context'] = [(cxt - self.pixel_mean) / self.pixel_std for cxt in batch["context"]]
 
         output = self.depth_net(batch)
 
@@ -58,24 +59,24 @@ class SelfSupDepthModel(nn.Module):
             pose_vec = self.pose_net(batch['image'], batch['context'])
             poses = [pose_vec2mat(pose_vec[:, i]) for i in range(pose_vec.shape[1])]
 
-            photometric_loss, smoothness_loss = self.calc_self_sup_losses(batch['image'],
-                                                                          batch['context'],
+            photometric_loss, smoothness_loss = self.calc_self_sup_losses(batch['image_orig'],
+                                                                          batch['context_orig'],
                                                                           output['depth_pred'],
-                                                                          poses,
-                                                                          batch['intrinsics'])
+                                                                          batch['intrinsics'],
+                                                                          poses)
             output['rec_loss'] = photometric_loss
-            output['smooth_loss'] = smoothness_loss
+            output['smooth_loss'] = self.smooth_loss_weight * smoothness_loss
 
             if self.sup_loss_weight > 0.0:
                 depth_gt = [resize_img(batch['depth_gt'], pred.shape[-2:], mode='nearest')
                             for pred in output['depth_pred']]
                 sup_losses = [self.supervise_loss(pred, gt) for pred, gt in zip(output['depth_pred'], depth_gt)]
-                output['silog_loss'] = sum(sup_losses) / len(sup_losses)
+                output['silog_loss'] = self.sup_loss_weight * sum(sup_losses) / len(sup_losses)
         else:
             output['depth_pred'] = post_process(output['depth_pred'][0], batch)
         return output
 
-    def calc_self_sup_losses(self, image, contexts, depth_pred, poses, intrinsics):
+    def calc_self_sup_losses(self, image, contexts, depth_pred, intrinsics, poses):
         num_scales = len(depth_pred)
 
         photo_losses = [[] for _ in range(num_scales)]
@@ -98,8 +99,8 @@ class SelfSupDepthModel(nn.Module):
                                                                 resized_intrinsics,
                                                                 pose))
 
-            if self.use_automask:
-                photo_losses[i].append(self.self_supervise_loss(resized_image, resized_image))
+                if self.use_automask:
+                    photo_losses[i].append(self.self_supervise_loss(resized_image, resized_target))
 
             if self.smooth_loss_weight > 0.0:
                 smooth_losses.append(cal_smoothness_loss(depth_pred[i], resized_image))

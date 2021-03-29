@@ -64,7 +64,6 @@ class PhotometricLoss(nn.Module):
 
         if depth_src is not None:
             device = image_dst.get_device()
-            depth_src = 1. / depth_src.clamp(min=1e-6)
 
             # Generate cameras for all scales
             cam_src = Camera(K=intrinsics_src.float()).to(device)
@@ -86,7 +85,7 @@ class PhotometricLoss(nn.Module):
         if self.ssim_loss_weight > 0.0:
 
             ssim_loss = SSIM(warped_dst, image_src, C1=self.C1, C2=self.C2, kernel_size=3)
-            torch.clamp((1. - ssim_loss) / 2., 0., 1.)
+            ssim_loss = torch.clamp((1. - ssim_loss) / 2., 0., 1.)
 
             # Weighted Sum: alpha * ssim + (1 - alpha) * l1
             photometric_loss = self.ssim_loss_weight * ssim_loss.mean(1, True) + \
