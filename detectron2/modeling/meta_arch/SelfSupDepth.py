@@ -50,12 +50,13 @@ class SelfSupDepthModel(nn.Module):
         batch = to_cuda(batch, self.device)
 
         batch['image'] = (batch["image"] - self.pixel_mean) / self.pixel_std
-        batch['context'] = [(cxt - self.pixel_mean) / self.pixel_std for cxt in batch["context"]]
 
         output = self.depth_net(batch)
 
         if self.training:
             # [B, N, 6]
+            batch['context'] = [(cxt - self.pixel_mean) / self.pixel_std for cxt in batch["context"]]
+
             pose_vec = self.pose_net(batch['image'], batch['context'])
             poses = [pose_vec2mat(pose_vec[:, i]) for i in range(pose_vec.shape[1])]
 

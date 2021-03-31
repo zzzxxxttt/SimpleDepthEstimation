@@ -252,16 +252,16 @@ class CommonMetricPrinter(EventWriter):
             max_mem_mb = None
 
         # NOTE: max_mem is parsed by grep in "dev/parse_results.sh"
-        eta_str = f"eta: {eta_string}" if eta_string else ""
         epoch_str = f"[{storage.epoch:0{len(str(storage.max_epoch))}d}/{storage.max_epoch}]"
-        iter_str = f"[{storage.epoch_iter:0{len(str(storage.max_epoch_iter))}d}/{storage.max_epoch_iter}]"
-        loss_str = "  ".join([f"{k}: {v.median(self._window_size):.4f}"
+        iter_str = f"[{storage.epoch_iter:0{len(str(storage.max_epoch_iter))}d}/{storage.max_epoch_iter}] "
+        loss_str = "  ".join([f"{k}: {v.median(self._window_size):.6f}"
                               for k, v in storage.histories().items() if "loss" in k])
-        time_str = f"time: {iter_time:.4f}" if iter_time is not None else ""
-        data_time_str = f"data_time: {data_time:.4f}" if data_time is not None else ""
-        memory_str = f"max_mem: {max_mem_mb:.0f}M" if max_mem_mb is not None else ""
+        time_str = f"time: {iter_time:.4f} " if iter_time is not None else ""
+        data_time_str = f"data_time: {data_time:.4f} " if data_time is not None else ""
+        memory_str = f"max_mem: {max_mem_mb:.0f}M " if max_mem_mb is not None else ""
+        eta_str = f"eta: {eta_string}" if eta_string else ""
         self.logger.info(
-            f" {eta_str} {epoch_str}{iter_str} {loss_str} {time_str} {data_time_str} lr: {lr} {memory_str}")
+            f" {epoch_str}{iter_str}{loss_str} {time_str}{data_time_str}lr: {lr} {memory_str}{eta_str}")
 
 
 class EventStorage:

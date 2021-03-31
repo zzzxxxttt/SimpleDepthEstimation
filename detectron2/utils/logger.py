@@ -6,6 +6,7 @@ import os
 import sys
 import time
 from collections import Counter
+from datetime import datetime
 from tabulate import tabulate
 from termcolor import colored
 
@@ -34,7 +35,7 @@ class _ColorfulFormatter(logging.Formatter):
 
 @functools.lru_cache()  # so that calling setup_logger multiple times won't add many handlers
 def setup_logger(
-    output=None, distributed_rank=0, *, color=True, name="detectron2", abbrev_name=None
+        output=None, distributed_rank=0, *, color=True, name="detectron2", abbrev_name=None
 ):
     """
     Initialize the detectron2 logger and set its verbosity level to "DEBUG".
@@ -82,10 +83,12 @@ def setup_logger(
     if output is not None:
         if output.endswith(".txt") or output.endswith(".log"):
             filename = output
+            if distributed_rank > 0:
+                filename = filename + ".rank{}".format(distributed_rank)
         else:
-            filename = os.path.join(output, "log.txt")
-        if distributed_rank > 0:
-            filename = filename + ".rank{}".format(distributed_rank)
+            filename = os.path.join(output, f"log_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.log")
+            if distributed_rank > 0:
+                filename = os.path.join(output, f"log.log") + ".rank{}".format(distributed_rank)
         PathManager.mkdirs(os.path.dirname(filename))
 
         fh = logging.StreamHandler(_cached_log_stream(filename))

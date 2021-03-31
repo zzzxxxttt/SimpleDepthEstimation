@@ -1,6 +1,8 @@
 import cv2
 import random
 import numpy as np
+import torchvision.transforms as transforms
+from PIL import Image
 
 
 def resize_depth_np(depth, dst_size):
@@ -120,11 +122,30 @@ def random_image_augment(data, p=0.5):
     return data
 
 
+def random_image_augment_v2(data, p=1.0, jitter_params=(0.2, 0.2, 0.2, 0.05)):
+    if random.random() < p:
+        # Prepare transformation
+        color_augmentation = transforms.ColorJitter()
+        brightness, contrast, saturation, hue = jitter_params
+        augment_image = color_augmentation.get_params(
+            brightness=[max(0., 1 - brightness), 1 + brightness],
+            contrast=[max(0., 1 - contrast), 1 + contrast],
+            saturation=[max(0., 1 - saturation), 1 + saturation],
+            hue=[-hue, hue])
+        # Jitter single items
+        data['image'] = np.array(augment_image(Image.fromarray(data['image'])))
+        # Jitter lists
+        if 'context' in data:
+            data['context'] = [np.array(augment_image(Image.fromarray(cxt))) for cxt in data['context']]
+    # Return jittered (?) sample
+    return data
+
+
 def read_img(filepath):
     img = cv2.imread(filepath)
     assert img is not None, f'{filepath}'
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    return img.astype(np.float32) / 255
+    return img
 
 
 def read_npz_depth(file):

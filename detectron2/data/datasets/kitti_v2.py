@@ -9,7 +9,7 @@ from torchvision import transforms
 
 from detectron2.data.build import DATASET_REGISTRY, DatasetBase
 from .preprocessing import read_img, read_npz_depth, read_png_depth, read_kitti_calib_file, read_bin
-from .preprocessing import resize, random_crop, random_image_augment, kb_crop, flip
+from .preprocessing import resize, random_crop, random_image_augment_v2, kb_crop, flip
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +150,8 @@ class KittiDepthTrain_v2(DatasetBase):
             data['context_orig'] = [d.copy() for d in data['context']]
 
         if self.mode == 'train':
-            data = random_image_augment(data)  # Random gamma, brightness, color augmentation
+            # data = random_image_augment(data)  # Random gamma, brightness, color augmentation
+            data = random_image_augment_v2(data)
 
         data['image'] = self.to_tensor(data['image'])
         data['image_orig'] = self.to_tensor(data['image_orig'])

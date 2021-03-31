@@ -116,7 +116,9 @@ class kitti_evaluator(DatasetEvaluator):
                           f'{results[6]:7.3f}, {results[7]:7.3f}, {results[8]:7.3f}')
 
         # Copy so the caller can do whatever with results
-        return {self.tag: results}
+        return {self.tag: {'abs_rel': results[2], 'sq_rel': results[3],
+                           'rms': results[4], 'log_rms': results[5],
+                           'd1': results[6], 'd2': results[7], 'd3': results[8]}}
 
 
 @EVALUATOR_REGISTRY.register()

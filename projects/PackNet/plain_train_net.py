@@ -135,7 +135,7 @@ def do_train(cfg, model, resume=False):
                                     'weight_decay': 0.0},
                                    {'name': 'Pose',
                                     'params': model.module.pose_net.parameters(),
-                                    'lr': cfg.SOLVER.DEPTH_LR,
+                                    'lr': cfg.SOLVER.POSE_LR,
                                     'weight_decay': 0.0}], eps=1e-6)
     # Training parameters
 
@@ -143,17 +143,15 @@ def do_train(cfg, model, resume=False):
                                                      milestones=cfg.SOLVER.LR_STEPS,
                                                      gamma=cfg.SOLVER.GAMMA)
 
-    checkpointer = \
-        DetectionCheckpointer(model, cfg.OUTPUT_DIR, optimizer=optimizer)
-    periodic_checkpointer = \
-        PeriodicCheckpointer(checkpointer, cfg.SOLVER.CHECKPOINT_PERIOD, max_iter=cfg.SOLVER.MAX_EPOCHS)
+    checkpointer = DetectionCheckpointer(model, cfg.OUTPUT_DIR, optimizer=optimizer, scheduler=scheduler)
+    periodic_checkpointer = PeriodicCheckpointer(checkpointer, cfg.SOLVER.CHECKPOINT_PERIOD,
+                                                 max_iter=cfg.SOLVER.MAX_EPOCHS)
 
-    start_epoch = \
-        checkpointer.resume_or_load(cfg.MODEL.WEIGHTS, resume=resume).get("epoch", -1) + 1
+    start_epoch = checkpointer.resume_or_load(cfg.MODEL.WEIGHTS, resume=resume).get("iteration", -1) + 1
 
     max_iter = cfg.SOLVER.MAX_EPOCHS * len(data_loader)
 
-    writers = default_writers(cfg.OUTPUT_DIR, None) if comm.is_main_process() else []
+    writers = default_writers(cfg.OUTPUT_DIR, max_iter=max_iter) if comm.is_main_process() else []
 
     # compared to "train_net.py", we do not support accurate timing and
     # precise BN here, because they are not trivial to implement in a small training loop
@@ -193,7 +191,9 @@ def do_train(cfg, model, resume=False):
             scheduler.step()
 
             if cfg.TEST.EVAL_PERIOD > 0 and (epoch + 1) % cfg.TEST.EVAL_PERIOD == 0:
-                do_test(cfg, model)
+                eval_results = do_test(cfg, model)
+                for tag in eval_results:
+                    storage.put_scalars(**{f"{tag}/k": v for k, v in eval_results[tag].items()})
                 # Compared to "train_net.py", the test results are not dumped to EventStorage
                 comm.synchronize()
 
