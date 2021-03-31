@@ -78,6 +78,7 @@ def add_config(cfg):
     _C.MODEL.DEPTH_NET.BN_NO_TRACK = False
     _C.MODEL.DEPTH_NET.FIX_1ST_CONV = False
     _C.MODEL.DEPTH_NET.FIX_1ST_CONVS = False
+    _C.MODEL.DEPTH_NET.FLIP_PROB = 0.5
 
     _C.LOSS.VARIANCE_FOCUS = 0.85
 

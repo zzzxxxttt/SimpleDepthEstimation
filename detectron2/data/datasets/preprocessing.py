@@ -76,19 +76,9 @@ def random_crop(data, height, width):
 
 def flip(data):
     if random.random() > 0.5:
-        data['image'] = data['image'][:, ::-1, :].copy()
-
-        if 'context' in data:
-            data['context'] = [img[:, ::-1, :].copy() for img in data['context']]
-
-        if 'depth_gt' in data:
-            data['depth_gt'] = data['depth_gt'][:, ::-1].copy()
-
         data['flip'] = True
-
     else:
         data['flip'] = False
-
     return data
 
 

@@ -142,9 +142,6 @@ class KittiDepthTrain_v2(DatasetBase):
         elif self.mode == 'train':
             data = random_crop(data, self.input_h, self.input_w)
 
-        if self.mode == 'train':
-            data = flip(data)  # Random flipping
-
         data['image_orig'] = data['image'].copy()
         if 'context' in data:
             data['context_orig'] = [d.copy() for d in data['context']]

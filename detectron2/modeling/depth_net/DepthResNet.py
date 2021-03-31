@@ -1,3 +1,6 @@
+import random
+
+import torch
 import torch.nn as nn
 from functools import partial
 
@@ -38,15 +41,25 @@ class DepthResNet(nn.Module):
         self.scale_inv_depth = partial(disp_to_depth, min_depth=0.1, max_depth=cfg.MODEL.MAX_DEPTH)
 
         self.upsample_depth = cfg.MODEL.DEPTH_NET.UPSAMPLE_DEPTH
+        self.flip_prob = cfg.MODEL.DEPTH_NET.FLIP_PROB
 
     def forward(self, data):
         """
         Runs the network and returns inverse depth maps
         (4 scales if training and 1 if not).
         """
-        x = self.encoder(data['image'])
+        image = data['image']
+        flip = False
+        if self.training and random.random() < self.flip_prob:
+            image = torch.flip(image, [3])
+            flip = True
+
+        x = self.encoder(image)
         x = self.decoder(x)
         disps = [self.scale_inv_depth(x[('disp', i)])[1] for i in range(4)]
+
+        if flip:
+            disps = [torch.flip(d, [3]) for d in disps]
 
         if self.upsample_depth:
             disps = [resize_img(d, data['image'].shape[-2:], mode='nearest') for d in disps]

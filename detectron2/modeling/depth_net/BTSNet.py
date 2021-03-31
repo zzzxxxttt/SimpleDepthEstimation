@@ -14,6 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>
 
+import random
 import logging
 
 import torch
@@ -347,17 +348,27 @@ class BtsModel(nn.Module):
                  cfg.MODEL.DEPTH_NET.FIX_1ST_CONV,
                  cfg.MODEL.DEPTH_NET.FIX_1ST_CONVS)
 
+        self.flip_prob = cfg.MODEL.DEPTH_NET.FLIP_PROB
+
     def forward(self, data):
-        skip_feat = self.encoder(data['image'])
+        image = data['image']
+        flip = False
+        if self.training and random.random() < self.flip_prob:
+            image = torch.flip(image, [3])
+            flip = True
 
-        depth_8x8, depth_4x4, depth_2x2, reduc_1x1, final_depth = \
-            self.decoder(skip_feat, data['focal'])
+        skip_feat = self.encoder(image)
 
-        return {'depth_8x8': depth_8x8,
-                'depth_4x4': depth_4x4,
-                'depth_2x2': depth_2x2,
-                'reduc_1x1': reduc_1x1,
-                'depth_pred': [final_depth]}
+        outputs = self.decoder(skip_feat, data['focal'])
+
+        if flip:
+            outputs = [torch.flip(d, [3]) for d in outputs]
+
+        return {'depth_8x8': outputs[0],
+                'depth_4x4': outputs[1],
+                'depth_2x2': outputs[2],
+                'reduc_1x1': outputs[3],
+                'depth_pred': [outputs[4]]}
 
 
 # This sets the batch norm layers in pytorch as if {'is_training': False, 'scale': True} in tensorflow
