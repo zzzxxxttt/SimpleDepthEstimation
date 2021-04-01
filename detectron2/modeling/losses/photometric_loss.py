@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .ssim_loss import SSIM
-from ...geometry.camera import Camera
+from ...geometry.camera import img_to_points, points_to_img, inv_intrinsics
 
 
 class PhotometricLoss(nn.Module):
@@ -51,9 +51,7 @@ class PhotometricLoss(nn.Module):
             Predicted depth maps for the original image, in all scales
         intrinsics_src : torch.Tensor [B,3,3]
             Original camera intrinsics
-        intrinsics_dst : torch.Tensor [B,3,3]
-            Reference camera intrinsics
-        T_src_to_dst : list of Pose
+        T_src_to_dst : torch.Tensor [B,4,4]
             Camera transformation between original and context
 
         Returns
@@ -63,16 +61,16 @@ class PhotometricLoss(nn.Module):
         """
 
         if depth_src is not None:
-            device = image_dst.get_device()
-
-            # Generate cameras for all scales
-            cam_src = Camera(K=intrinsics_src.float()).to(device)
-            cam_dst = Camera(K=intrinsics_src.float(), Tcw=T_src_to_dst).to(device)
-
             # Reconstruct world points from target_camera
-            world_points = cam_src.reconstruct(depth_src, frame='w')
+            T = torch.eye(4, device=image_src.device)
+            T[:3, :3] = inv_intrinsics(intrinsics_src)
+            points = img_to_points(depth_src, T)
+
             # Project world points onto reference camera
-            coords_dst = cam_dst.project(world_points, frame='w')
+            T = T_src_to_dst.clone()
+            T[:3, :3] = T[:3, :3].bmm(intrinsics_src)
+            coords_dst = points_to_img(points, T)
+
             # View-synthesis given the projected reference points
             warped_dst = F.grid_sample(image_dst, coords_dst,
                                        mode='bilinear', padding_mode='zeros', align_corners=True)
@@ -100,5 +98,3 @@ class PhotometricLoss(nn.Module):
 
         # Return losses and metrics
         return photometric_loss
-
-########################################################################################################################

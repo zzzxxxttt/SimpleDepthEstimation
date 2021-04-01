@@ -49,15 +49,14 @@ class SelfSupDepthModel(nn.Module):
     def forward(self, batch):
         batch = to_cuda(batch, self.device)
 
+        image_no_norm = batch["image"]
         batch['image'] = (batch["image"] - self.pixel_mean) / self.pixel_std
 
         output = self.depth_net(batch)
 
         if self.training:
             # [B, N, 6]
-            batch['context'] = [(cxt - self.pixel_mean) / self.pixel_std for cxt in batch["context"]]
-
-            pose_vec = self.pose_net(batch['image'], batch['context'])
+            pose_vec = self.pose_net(image_no_norm, batch['context'])
             poses = [pose_vec2mat(pose_vec[:, i]) for i in range(pose_vec.shape[1])]
 
             photometric_loss, smoothness_loss = self.calc_self_sup_losses(batch['image_orig'],

@@ -10,12 +10,17 @@ class ResNetMultiImageInput(models.ResNet):
     """Constructs a resnet model with varying number of input images.
     Adapted from https://github.com/pytorch/vision/blob/master/torchvision/models/resnet.py
     """
-    def __init__(self, block, layers, num_classes=1000, num_input_images=1):
-        super(ResNetMultiImageInput, self).__init__(block, layers)
+
+    def __init__(self, block, layers, num_classes=1000, num_input_images=1, norm_layer=None):
+        super(ResNetMultiImageInput, self).__init__(block, layers, norm_layer=norm_layer)
+        if norm_layer is None:
+            norm_layer = nn.BatchNorm2d
+        self._norm_layer = norm_layer
+
         self.inplanes = 64
         self.conv1 = nn.Conv2d(
             num_input_images * 3, 64, kernel_size=7, stride=2, padding=3, bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
+        self.bn1 = norm_layer(64)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         self.layer1 = self._make_layer(block, 64, layers[0])
@@ -26,14 +31,15 @@ class ResNetMultiImageInput(models.ResNet):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-            elif isinstance(m, nn.BatchNorm2d):
+            elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
 
 
-def resnet_multiimage_input(num_layers, pretrained=False, num_input_images=1):
+def resnet_multiimage_input(num_layers, pretrained=False, num_input_images=1, norm_layer=None):
     """Constructs a ResNet model.
     Args:
+        norm_layer: norm layer
         num_layers (int): Number of resnet layers. Must be 18 or 50
         pretrained (bool): If True, returns a model pre-trained on ImageNet
         num_input_images (int): Number of frames stacked as input
@@ -41,7 +47,8 @@ def resnet_multiimage_input(num_layers, pretrained=False, num_input_images=1):
     assert num_layers in [18, 50], "Can only run with 18 or 50 layer resnet"
     blocks = {18: [2, 2, 2, 2], 50: [3, 4, 6, 3]}[num_layers]
     block_type = {18: models.resnet.BasicBlock, 50: models.resnet.Bottleneck}[num_layers]
-    model = ResNetMultiImageInput(block_type, blocks, num_input_images=num_input_images)
+    model = ResNetMultiImageInput(block_type, blocks,
+                                  num_input_images=num_input_images, norm_layer=norm_layer)
 
     if pretrained:
         loaded = model_zoo.load_url(models.resnet.model_urls['resnet{}'.format(num_layers)])
@@ -54,7 +61,8 @@ def resnet_multiimage_input(num_layers, pretrained=False, num_input_images=1):
 class ResnetEncoder(nn.Module):
     """Pytorch module for a resnet encoder
     """
-    def __init__(self, num_layers, pretrained, num_input_images=1):
+
+    def __init__(self, num_layers, pretrained, num_input_images=1, norm_layer=None):
         super(ResnetEncoder, self).__init__()
 
         self.num_ch_enc = np.array([64, 64, 128, 256, 512])
@@ -69,9 +77,10 @@ class ResnetEncoder(nn.Module):
             raise ValueError("{} is not a valid number of resnet layers".format(num_layers))
 
         if num_input_images > 1:
-            self.encoder = resnet_multiimage_input(num_layers, pretrained, num_input_images)
+            self.encoder = resnet_multiimage_input(num_layers, pretrained,
+                                                   num_input_images=num_input_images, norm_layer=norm_layer)
         else:
-            self.encoder = resnets[num_layers](pretrained)
+            self.encoder = resnets[num_layers](pretrained, norm_layer=norm_layer)
 
         if num_layers > 34:
             self.num_ch_enc[1:] *= 4

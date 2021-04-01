@@ -130,14 +130,14 @@ def do_train(cfg, model, resume=False):
 
     data_loader = build_detection_train_loader(cfg)
 
-    optimizer = torch.optim.AdamW([{'name': 'Depth',
-                                    'params': model.module.depth_net.parameters(),
-                                    'lr': cfg.SOLVER.DEPTH_LR,
-                                    'weight_decay': 0.0},
-                                   {'name': 'Pose',
-                                    'params': model.module.pose_net.parameters(),
-                                    'lr': cfg.SOLVER.POSE_LR,
-                                    'weight_decay': 0.0}], eps=1e-6)
+    optimizer = torch.optim.Adam([{'name': 'Depth',
+                                   'params': model.module.depth_net.parameters(),
+                                   'lr': cfg.SOLVER.DEPTH_LR,
+                                   'weight_decay': 0.0},
+                                  {'name': 'Pose',
+                                   'params': model.module.pose_net.parameters(),
+                                   'lr': cfg.SOLVER.POSE_LR,
+                                   'weight_decay': 0.0}])
     # Training parameters
 
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
