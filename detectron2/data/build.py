@@ -84,7 +84,8 @@ def build_detection_train_loader(cfg):
     if sampler_name == 'DDPSampler':
         sampler = torch.utils.data.distributed.DistributedSampler(dataset,
                                                                   num_replicas=comm.get_world_size(),
-                                                                  rank=comm.get_rank())
+                                                                  rank=comm.get_rank(),
+                                                                  shuffle=True)
     elif sampler_name == "TrainingSampler":
         sampler = TrainingSampler(len(dataset))
     else:

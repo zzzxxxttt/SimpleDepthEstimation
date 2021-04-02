@@ -162,7 +162,7 @@ def read_kitti_calib_file(filepath):
             # The only non-float values in these files are dates, which
             # we don't care about anyway
             try:
-                data[key] = np.array([float(x) for x in value.split()])
+                data[key] = np.array([float(x) for x in value.split()], dtype=np.float32)
             except ValueError:
                 pass
 

@@ -62,13 +62,14 @@ class PhotometricLoss(nn.Module):
 
         if depth_src is not None:
             # Reconstruct world points from target_camera
-            T = torch.eye(4, device=image_src.device)
-            T[:3, :3] = inv_intrinsics(intrinsics_src)
+            T = torch.zeros([image_src.shape[0], 4, 4], device=image_src.device)
+            T[:, :3, :3] = inv_intrinsics(intrinsics_src)
             points = img_to_points(depth_src, T)
 
             # Project world points onto reference camera
             T = T_src_to_dst.clone()
-            T[:3, :3] = T[:3, :3].bmm(intrinsics_src)
+            T[:, :3, :3] = intrinsics_src.bmm(T[:, :3, :3])
+            T[:, :3, [3]] = intrinsics_src.bmm(T[:, :3, [3]])
             coords_dst = points_to_img(points, T)
 
             # View-synthesis given the projected reference points

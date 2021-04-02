@@ -1,190 +1,168 @@
+from collections import OrderedDict
+
+import random
+import numpy as np
+from functools import partial
+
 import torch
 import torch.nn as nn
-from torchvision.models.utils import load_state_dict_from_url
-from torchvision.models.resnet import conv1x1, conv3x3
+
+import torchvision.models as models
+
+from .build import DEPTH_NET_REGISTRY
+
+from ...layers.depth_decoder import upsample, ConvBlock, Conv3x3
+from ...geometry.camera import resize_img
 
 from ...layers.layer_norm import LayerNorm
 
-model_urls = {
-    'resnet18': 'https://download.pytorch.org/models/resnet18-5c106cde.pth',
-    'resnet34': 'https://download.pytorch.org/models/resnet34-333f7ec4.pth',
-    'resnet50': 'https://download.pytorch.org/models/resnet50-19c8e357.pth',
-    'resnet101': 'https://download.pytorch.org/models/resnet101-5d3b4d8f.pth',
-    'resnet152': 'https://download.pytorch.org/models/resnet152-b121ed2d.pth',
-    'resnext50_32x4d': 'https://download.pytorch.org/models/resnext50_32x4d-7cdf4587.pth',
-    'resnext101_32x8d': 'https://download.pytorch.org/models/resnext101_32x8d-8ba56ff5.pth',
-    'wide_resnet50_2': 'https://download.pytorch.org/models/wide_resnet50_2-95faca4d.pth',
-    'wide_resnet101_2': 'https://download.pytorch.org/models/wide_resnet101_2-32ee1156.pth',
-}
+
+class ResnetEncoder(nn.Module):
+    def __init__(self, num_layers, pretrained):
+        super(ResnetEncoder, self).__init__()
+
+        self.num_ch_enc = np.array([64, 64, 128, 256, 512])
+
+        resnets = {18: models.resnet18,
+                   34: models.resnet34,
+                   50: models.resnet50,
+                   101: models.resnet101,
+                   152: models.resnet152}
+
+        if num_layers not in resnets:
+            raise ValueError("{} is not a valid number of resnet layers".format(num_layers))
+
+        self.encoder = resnets[num_layers](pretrained, norm_layer=LayerNorm)
+
+        if num_layers > 34:
+            self.num_ch_enc[1:] *= 4
+
+    def forward(self, input_image):
+        features = []
+
+        x = self.encoder.conv1(input_image)
+        x = self.encoder.bn1(x)
+
+        features.append(self.encoder.relu(x))
+        features.append(self.encoder.layer1(self.encoder.maxpool(self.features[-1])))
+        features.append(self.encoder.layer2(self.features[-1]))
+        features.append(self.encoder.layer3(self.features[-1]))
+        features.append(self.encoder.layer4(self.features[-1]))
+        return features
 
 
-class Conv2dWrapper(nn.Conv2d):
-    def __init__(self, in_planes, out_planes, stride=1):
-        super(Conv2dWrapper, self).__init__(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
+class DepthDecoder(nn.Module):
+    def __init__(self, num_ch_enc, scales=range(4), num_output_channels=1,
+                 use_skips=True, learn_scale=False):
+        super(DepthDecoder, self).__init__()
 
-    def forward(self, x):
-        x, stddev = x
-        return super(Conv2dWrapper, self).forward(x), stddev
+        self.num_output_channels = num_output_channels
+        self.use_skips = use_skips
+        self.upsample_mode = 'nearest'
+        self.scales = scales
 
+        self.num_ch_enc = num_ch_enc
+        self.num_ch_dec = np.array([16, 32, 64, 128, 256])
 
-class LayerNormBasicBlock(nn.Module):
-    expansion = 1
+        self.scale = nn.Parameter(torch.ones(1), requires_grad=True) if learn_scale else None
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None, groups=1, base_width=64, dilation=1):
-        super(LayerNormBasicBlock, self).__init__()
-        if groups != 1 or base_width != 64:
-            raise ValueError('BasicBlock only supports groups=1 and base_width=64')
-        if dilation > 1:
-            raise NotImplementedError("Dilation > 1 not supported in BasicBlock")
-        # Both self.conv1 and self.downsample layers downsample the input when stride != 1
-        self.conv1 = conv3x3(inplanes, planes, stride)
-        self.bn1 = LayerNorm()
-        self.relu = nn.ReLU(inplace=True)
-        self.conv2 = conv3x3(planes, planes)
-        self.bn2 = LayerNorm()
-        self.downsample = downsample
-        self.stride = stride
+        # decoder
+        self.convs = OrderedDict()
+        for i in range(4, -1, -1):
+            # upconv_0
+            num_ch_in = self.num_ch_enc[-1] if i == 4 else self.num_ch_dec[i + 1]
+            num_ch_out = self.num_ch_dec[i]
+            self.convs[("upconv", i, 0)] = ConvBlock(num_ch_in, num_ch_out)
 
-    def forward(self, x):
-        x, stddev = x
+            # upconv_1
+            num_ch_in = self.num_ch_dec[i]
+            if self.use_skips and i > 0:
+                num_ch_in += self.num_ch_enc[i - 1]
+            num_ch_out = self.num_ch_dec[i]
+            self.convs[("upconv", i, 1)] = ConvBlock(num_ch_in, num_ch_out)
 
-        identity = x
+        for s in self.scales:
+            self.convs[("dispconv", s)] = Conv3x3(self.num_ch_dec[s], self.num_output_channels)
 
-        out = self.conv1(x)
-        out = self.bn1((out, stddev))
-        out = self.relu(out)
+        self.decoder = nn.ModuleList(list(self.convs.values()))
+        self.softplus = nn.Softplus()
 
-        out = self.conv2(out)
-        out = self.bn2((out, stddev))
+    def forward(self, input_features):
+        outputs = {}
 
-        if self.downsample is not None:
-            identity = self.downsample(x)
+        # decoder
+        x = input_features[-1]
+        for i in range(4, -1, -1):
+            x = self.convs[("upconv", i, 0)](x)
+            x = [upsample(x)]
+            if self.use_skips and i > 0:
+                x += [input_features[i - 1]]
+            x = torch.cat(x, 1)
+            x = self.convs[("upconv", i, 1)](x)
+            if i in self.scales:
+                outputs[("disp", i)] = self.softplus(self.convs[("dispconv", i)](x))
+                if self.scale is not None:
+                    outputs[("disp", i)] *= self.scale
 
-        out += identity
-        out = self.relu(out)
-
-        return out, stddev
-
-
-class LayerNormBottleneck(nn.Module):
-    expansion = 4
-
-    def __init__(self, inplanes, planes, stride=1, downsample=None, groups=1, base_width=64, dilation=1):
-        super(LayerNormBottleneck, self).__init__()
-        width = int(planes * (base_width / 64.)) * groups
-        # Both self.conv2 and self.downsample layers downsample the input when stride != 1
-        self.conv1 = conv1x1(inplanes, width)
-        self.bn1 = LayerNorm()
-        self.conv2 = conv3x3(width, width, stride, groups, dilation)
-        self.bn2 = LayerNorm()
-        self.conv3 = conv1x1(width, planes * self.expansion)
-        self.bn3 = LayerNorm()
-        self.relu = nn.ReLU(inplace=True)
-        self.downsample = downsample
-        self.stride = stride
-
-    def forward(self, x):
-        x, stddev = x
-
-        identity = x
-
-        out = self.conv1(x)
-        out = self.bn1((out, stddev))
-        out = self.relu(out)
-
-        out = self.conv2(out)
-        out = self.bn2((out, stddev))
-        out = self.relu(out)
-
-        out = self.conv3(out)
-        out = self.bn3((out, stddev))
-
-        if self.downsample is not None:
-            identity = self.downsample(x)
-
-        out += identity
-        out = self.relu(out)
-
-        return out, stddev
+        return outputs
 
 
-class LayerNormResNet(nn.Module):
-    def __init__(self, block, layers, groups=1, width_per_group=64):
-        super(LayerNormResNet, self).__init__()
-        self.inplanes = 64
-        self.dilation = 1
+@DEPTH_NET_REGISTRY.register()
+class GoogleResNet(nn.Module):
+    """
+    Inverse depth network based on the ResNet architecture.
 
-        self.groups = groups
-        self.base_width = width_per_group
-        self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=7, stride=2, padding=3, bias=False)
-        self.bn1 = LayerNorm()
-        self.relu = nn.ReLU(inplace=True)
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.layer1 = self._make_layer(block, 64, layers[0])
-        self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
-        self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
+    Parameters
+    ----------
+    version : str
+        Has a XY format, where:
+        X is the number of residual layers [18, 34, 50] and
+        Y is an optional ImageNet pretrained flag added by the "pt" suffix
+        Example: "18pt" initializes a pretrained ResNet18, and "34" initializes a ResNet34 from scratch
+    kwargs : dict
+        Extra parameters
+    """
 
+    def __init__(self, cfg, **kwargs):
+        super().__init__()
+        version = cfg.MODEL.DEPTH_NET.ENCODER_NAME
+        assert version is not None, "DispResNet needs a version"
+
+        num_layers = int(version[:2])  # First two characters are the number of layers
+        pretrained = version[2:] == 'pt'  # If the last characters are "pt", use ImageNet pretraining
+        assert num_layers in [18, 34, 50], 'ResNet version {} not available'.format(num_layers)
+
+        self.encoder = ResnetEncoder(num_layers=num_layers, pretrained=pretrained)
+        self.decoder = DepthDecoder(num_ch_enc=self.encoder.num_ch_enc,
+                                    learn_scale=cfg.MODEL.DEPTH_NET.LEARN_SCALE)
+
+        self.upsample_depth = cfg.MODEL.DEPTH_NET.UPSAMPLE_DEPTH
+        self.flip_prob = cfg.MODEL.DEPTH_NET.FLIP_PROB
+
+    def set_stddev(self, stddev):
         for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-            elif isinstance(m, LayerNorm):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
+            if isinstance(m, LayerNorm):
+                m.stddev = stddev
 
-    def _make_layer(self, block, planes, blocks, stride=1):
-        downsample = None
-        previous_dilation = self.dilation
-        if stride != 1 or self.inplanes != planes * block.expansion:
-            downsample = nn.Sequential(Conv2dWrapper(self.inplanes, planes * block.expansion, stride),
-                                       LayerNorm())
+    def forward(self, data):
+        """
+        Runs the network and returns inverse depth maps
+        (4 scales if training and 1 if not).
+        """
+        image = data['image']
+        flip = False
+        if self.training and random.random() < self.flip_prob:
+            image = torch.flip(image, [3])
+            flip = True
 
-        layers = [block(self.inplanes, planes, stride, downsample,
-                        self.groups, self.base_width, previous_dilation)]
-        self.inplanes = planes * block.expansion
-        for _ in range(1, blocks):
-            layers.append(block(self.inplanes, planes, groups=self.groups,
-                                base_width=self.base_width, dilation=self.dilation))
+        x = self.encoder(image)
+        x = self.decoder(x)
+        disps = x[('disp', 0)]
 
-        return nn.Sequential(*layers)
+        if flip:
+            disps = [torch.flip(d, [3]) for d in disps]
 
-    def _forward_impl(self, x, stddev):
-        # See note [TorchScript super()]
-        x = self.conv1(x)
-        x = self.bn1((x, stddev))
-        x = self.relu(x[0])
-        x = self.maxpool(x)
+        if self.upsample_depth:
+            disps = [resize_img(d, data['image'].shape[-2:], mode='nearest') for d in disps]
 
-        x = self.layer1((x, stddev))
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-        return x
-
-    def forward(self, x):
-        return self._forward_impl(x)
-
-
-def _resnet(arch, block, layers, pretrained, progress, **kwargs):
-    model = LayerNormResNet(block, layers, **kwargs)
-    if pretrained:
-        state_dict = load_state_dict_from_url(model_urls[arch],
-                                              progress=progress)
-        model.load_state_dict(state_dict)
-    return model
-
-
-def resnet18(pretrained=False, progress=True, **kwargs):
-    return _resnet('resnet18', LayerNormBasicBlock, [2, 2, 2, 2], pretrained, progress, **kwargs)
-
-
-def resnet34(pretrained=False, progress=True, **kwargs):
-    return _resnet('resnet34', LayerNormBasicBlock, [3, 4, 6, 3], pretrained, progress, **kwargs)
-
-
-def resnet50(pretrained=False, progress=True, **kwargs):
-    return _resnet('resnet50', LayerNormBottleneck, [3, 4, 6, 3], pretrained, progress, **kwargs)
-
-
-def resnet101(pretrained=False, progress=True, **kwargs):
-    return _resnet('resnet101', LayerNormBottleneck, [3, 4, 23, 3], pretrained, progress, **kwargs)
+        return {'depth_pred': disps}
