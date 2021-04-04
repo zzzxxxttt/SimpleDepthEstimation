@@ -9,35 +9,12 @@ import torch.nn as nn
 from .build import POSE_NET_REGISTRY
 
 
-########################################################################################################################
+def conv_gn(in_planes, out_planes, kernel_size=3, group_norm=True):
+    return nn.Sequential(nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size,
+                                   padding=(kernel_size - 1) // 2, stride=2),
+                         nn.GroupNorm(16, out_planes) if group_norm else nn.Sequential(),
+                         nn.ReLU(inplace=True))
 
-def conv_gn(in_planes, out_planes, kernel_size=3):
-    """
-    Convolutional block with GroupNorm
-
-    Parameters
-    ----------
-    in_planes : int
-        Number of input channels
-    out_planes : int
-        Number of output channels
-    kernel_size : int
-        Convolutional kernel size
-
-    Returns
-    -------
-    layers : nn.Sequential
-        Sequence of Conv2D + GroupNorm + ReLU
-    """
-    return nn.Sequential(
-        nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size,
-                  padding=(kernel_size - 1) // 2, stride=2),
-        nn.GroupNorm(16, out_planes),
-        nn.ReLU(inplace=True)
-    )
-
-
-########################################################################################################################
 
 @POSE_NET_REGISTRY.register()
 class PoseNet(nn.Module):
@@ -47,16 +24,16 @@ class PoseNet(nn.Module):
         super().__init__()
         self.nb_ref_imgs = cfg.MODEL.POSE_NET.NUM_CONTEXTS
 
-        conv_channels = [16, 32, 64, 128, 256, 256, 256]
-        self.conv1 = conv_gn(3 * (1 + self.nb_ref_imgs), conv_channels[0], kernel_size=7)
-        self.conv2 = conv_gn(conv_channels[0], conv_channels[1], kernel_size=5)
-        self.conv3 = conv_gn(conv_channels[1], conv_channels[2])
-        self.conv4 = conv_gn(conv_channels[2], conv_channels[3])
-        self.conv5 = conv_gn(conv_channels[3], conv_channels[4])
-        self.conv6 = conv_gn(conv_channels[4], conv_channels[5])
-        self.conv7 = conv_gn(conv_channels[5], conv_channels[6])
+        channels = [16, 32, 64, 128, 256, 256, 256]
+        self.conv1 = conv_gn(3 * (1 + self.nb_ref_imgs), channels[0], kernel_size=7)
+        self.conv2 = conv_gn(channels[0], channels[1], kernel_size=5)
+        self.conv3 = conv_gn(channels[1], channels[2])
+        self.conv4 = conv_gn(channels[2], channels[3])
+        self.conv5 = conv_gn(channels[3], channels[4])
+        self.conv6 = conv_gn(channels[4], channels[5])
+        self.conv7 = conv_gn(channels[5], channels[6])
 
-        self.pose_pred = nn.Conv2d(conv_channels[6], 6 * self.nb_ref_imgs,
+        self.pose_pred = nn.Conv2d(channels[6], 6 * self.nb_ref_imgs,
                                    kernel_size=1, padding=0)
 
         self.init_weights()
@@ -87,4 +64,4 @@ class PoseNet(nn.Module):
 
         return pose
 
-########################################################################################################################
+

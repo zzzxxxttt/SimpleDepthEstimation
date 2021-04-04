@@ -1,14 +1,14 @@
 MODEL:
-  META_ARCHITECTURE: "SelfSupDepthModel"
-  RAMPUP_ITER: 10000
+  META_ARCHITECTURE: "MotionLearningModel"
   DEPTH_NET:
     NAME: "GoogleResNet"
-    ENCODER_NAME: "50pt"
-  #    NAME: "BtsModel"
-  #    ENCODER_NAME: "resnet50_bts"
-  #    BTS_SIZE: 512
+    ENCODER_NAME: "50_"
+    #    NAME: "BtsModel"
+    #    ENCODER_NAME: "resnet50_bts"
+    #    BTS_SIZE: 512
     UPSAMPLE_DEPTH: True
     LEARN_SCALE: False
+    RAMPUP_ITERS: 10000
   POSE_NET:
     NAME: "PoseNet"
     NUM_CONTEXTS: 2
@@ -22,6 +22,7 @@ LOSS:
   PHOTOMETRIC_REDUCE: 'min'
   SUPERVISED_WEIGHT: 0.0
   VARIANCE_FOCUS: 0.85
+  VAR_LOSS_WEIGHT: 0.0
 DATASETS:
   TRAIN:
     NAME: "KittiDepthTrain_v2"

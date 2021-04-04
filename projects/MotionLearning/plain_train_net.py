@@ -24,6 +24,7 @@ import os
 import math
 from collections import OrderedDict
 import torch
+import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel
 import detectron2.utils.comm as comm
 from detectron2.checkpoint import DetectionCheckpointer, PeriodicCheckpointer
@@ -75,7 +76,6 @@ def add_config(cfg):
     _C.DATASETS.TEST.STRIDE = 0
 
     _C.MODEL.DATASET = "kitti"
-    _C.MODEL.RAMPUP_ITERS = 10000
     _C.MODEL.DEPTH_NET.LEARN_SCALE = False
     _C.MODEL.DEPTH_NET.ENCODER_NAME = "resnet50_bts"
     _C.MODEL.DEPTH_NET.BTS_SIZE = 512
@@ -84,6 +84,8 @@ def add_config(cfg):
     _C.MODEL.DEPTH_NET.FIX_1ST_CONV = False
     _C.MODEL.DEPTH_NET.FIX_1ST_CONVS = False
     _C.MODEL.DEPTH_NET.FLIP_PROB = 0.5
+    _C.MODEL.DEPTH_NET.NOISE_STDDEV = 0.5
+    _C.MODEL.DEPTH_NET.RAMPUP_ITERS = 10000
 
     _C.MODEL.POSE_NET = CN()
     _C.MODEL.POSE_NET.NAME = ''
@@ -98,6 +100,7 @@ def add_config(cfg):
     _C.LOSS.PHOTOMETRIC_REDUCE = 'min'
     _C.LOSS.SUPERVISED_WEIGHT = 0.0
     _C.LOSS.VARIANCE_FOCUS = 0.85
+    _C.LOSS.VAR_LOSS_WEIGHT = 0.0
 
     _C.TEST.GT_SCALE = False
 
@@ -120,6 +123,7 @@ def get_evaluator(cfg, output_folder=None):
 def do_test(cfg, model):
     data_loader = build_detection_test_loader(cfg)
     evaluator = get_evaluator(cfg, os.path.join(cfg.OUTPUT_DIR, "inference", cfg.DATASETS.TEST.NAME))
+    model.module.depth_net.set_stddev(0.0)
     results = inference_on_dataset(model, data_loader, evaluator)
     # if comm.is_main_process():
     #   logger.info("Evaluation results for {} in csv format:".format(dataset_name))
@@ -171,8 +175,9 @@ def do_train(cfg, model, resume=False):
                 storage.epoch_iter = epoch_iter
                 storage.max_epoch_iter = len(data_loader)
 
-                noise_stddev = 0.5 * (min(global_step / float(cfg.MODEL.RAMPUP_ITERS), 1.0)) ** 2
-                model.module.set_stddev(noise_stddev)
+                noise_stddev = cfg.MODEL.DEPTH_NET.NOISE_STDDEV * \
+                               (min(global_step / float(cfg.MODEL.DEPTH_NET.RAMPUP_ITERS), 1.0)) ** 2
+                model.module.depth_net.set_stddev(noise_stddev)
 
                 output = model(data)
 
@@ -187,6 +192,7 @@ def do_train(cfg, model, resume=False):
 
                 optimizer.zero_grad()
                 losses.backward()
+                nn.utils.clip_grad_norm_(model.parameters(), 10.0)
                 optimizer.step()
                 storage.put_scalar("lr", optimizer.param_groups[0]["lr"], smoothing_hint=False)
 

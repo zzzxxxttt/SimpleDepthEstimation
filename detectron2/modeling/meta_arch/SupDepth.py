@@ -7,7 +7,7 @@ import torch.nn as nn
 
 from .build import META_ARCH_REGISTRY
 from ..depth_net import build_depth_net
-from detectron2.modeling.losses.sup_losses import silog_loss
+from detectron2.modeling.losses.losses import silog_loss
 from ...utils.memory import to_cuda, to_numpy
 from ...geometry.camera import resize_img
 

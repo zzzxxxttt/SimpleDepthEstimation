@@ -44,10 +44,10 @@ class ResnetEncoder(nn.Module):
         x = self.encoder.bn1(x)
 
         features.append(self.encoder.relu(x))
-        features.append(self.encoder.layer1(self.encoder.maxpool(self.features[-1])))
-        features.append(self.encoder.layer2(self.features[-1]))
-        features.append(self.encoder.layer3(self.features[-1]))
-        features.append(self.encoder.layer4(self.features[-1]))
+        features.append(self.encoder.layer1(self.encoder.maxpool(features[-1])))
+        features.append(self.encoder.layer2(features[-1]))
+        features.append(self.encoder.layer3(features[-1]))
+        features.append(self.encoder.layer4(features[-1]))
         return features
 
 
@@ -157,7 +157,7 @@ class GoogleResNet(nn.Module):
 
         x = self.encoder(image)
         x = self.decoder(x)
-        disps = x[('disp', 0)]
+        disps = [x[('disp', 0)]]
 
         if flip:
             disps = [torch.flip(d, [3]) for d in disps]
@@ -166,3 +166,5 @@ class GoogleResNet(nn.Module):
             disps = [resize_img(d, data['image'].shape[-2:], mode='nearest') for d in disps]
 
         return {'depth_pred': disps}
+
+

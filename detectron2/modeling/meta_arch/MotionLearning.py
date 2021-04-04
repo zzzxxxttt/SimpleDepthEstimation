@@ -11,14 +11,14 @@ from ...geometry.pose_utils import pose_vec2mat
 from ...geometry.camera import resize_img, scale_intrinsics
 from ..losses.smoothness_loss import cal_smoothness_loss
 from ..losses.photometric_loss import PhotometricLoss
-from ..losses.losses import silog_loss
+from ..losses.losses import silog_loss, variance_loss
 from .SupDepth import post_process
 
 logger = logging.getLogger(__name__)
 
 
 @META_ARCH_REGISTRY.register()
-class SelfSupDepthModel(nn.Module):
+class MotionLearningModel(nn.Module):
     """
     Implement RetinaNet in :paper:`RetinaNet`.
     """
@@ -38,6 +38,7 @@ class SelfSupDepthModel(nn.Module):
         self.photometric_reduce = cfg.LOSS.PHOTOMETRIC_REDUCE
         self.sup_loss_weight = cfg.LOSS.SUPERVISED_WEIGHT
         self.supervise_loss = silog_loss(cfg.LOSS.VARIANCE_FOCUS)
+        self.var_loss_weight = cfg.LOSS.VAR_LOSS_WEIGHT
 
         self.register_buffer("pixel_mean", torch.Tensor(cfg.MODEL.PIXEL_MEAN).view(1, -1, 1, 1))
         self.register_buffer("pixel_std", torch.Tensor(cfg.MODEL.PIXEL_STD).view(1, -1, 1, 1))
@@ -72,6 +73,11 @@ class SelfSupDepthModel(nn.Module):
                             for pred in output['depth_pred']]
                 sup_losses = [self.supervise_loss(pred, gt) for pred, gt in zip(output['depth_pred'], depth_gt)]
                 output['silog_loss'] = self.sup_loss_weight * sum(sup_losses) / len(sup_losses)
+
+            if self.var_loss_weight > 0.0:
+                var_losses = [variance_loss(d) for d in output['depth_pred']]
+                output['var_loss'] = self.var_loss_weight * sum(var_losses) / len(var_losses)
+
         else:
             output['depth_pred'] = post_process(output['depth_pred'][0], batch)
         return output
