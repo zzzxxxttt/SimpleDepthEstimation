@@ -9,9 +9,9 @@ import torch.nn as nn
 from .build import POSE_NET_REGISTRY
 
 
-def conv_gn(in_planes, out_planes, kernel_size=3, group_norm=True):
+def conv_gn(in_planes, out_planes, kernel_size=3, group_norm=True, stride=2):
     return nn.Sequential(nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size,
-                                   padding=(kernel_size - 1) // 2, stride=2),
+                                   padding=(kernel_size - 1) // 2, stride=stride),
                          nn.GroupNorm(16, out_planes) if group_norm else nn.Sequential(),
                          nn.ReLU(inplace=True))
 
@@ -63,5 +63,3 @@ class PoseNet(nn.Module):
         pose = 0.01 * pose.view(pose.size(0), self.nb_ref_imgs, 6)
 
         return pose
-
-
