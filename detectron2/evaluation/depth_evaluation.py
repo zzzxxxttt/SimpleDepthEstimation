@@ -1,10 +1,13 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 import itertools
+import os
+import cv2
 import logging
 import numpy as np
 from tabulate import tabulate
 
 import detectron2.utils.comm as comm
+from detectron2.utils.file_io import write_depth
 
 from .evaluator import DatasetEvaluator, EVALUATOR_REGISTRY
 from ..utils.memory import to_numpy
@@ -149,3 +152,34 @@ class kitti_evaluator_50_80(kitti_evaluator):
         self.min_depth = 50
         self.max_depth = 80
         self.tag = 'kitti evaluator (50-80m)'
+
+
+@EVALUATOR_REGISTRY.register()
+class kitti_depth_saver(DatasetEvaluator):
+    def __init__(self, cfg, output_folder):
+        self._logger = logging.getLogger(__name__)
+        self._distributed = comm.get_world_size() > 1
+
+        self.use_gt_scale = cfg.TEST.GT_SCALE
+        self.output_folder = output_folder
+
+    def process(self, inputs, outputs):
+        inputs, outputs = to_numpy(inputs), to_numpy(outputs)
+
+        for i, pred in enumerate(outputs['depth_pred']):
+            metadata = inputs['metadata'][i]
+            pred = pred.squeeze()
+
+            if self.use_gt_scale and 'depth_gt_orig' in inputs:
+                gt = inputs['depth_gt_orig']
+                valid_mask = np.logical_and(gt > 1e-3, gt < 80)
+                pred = pred * np.median(gt[valid_mask]) / np.median(pred[valid_mask])
+
+            save_dir = os.path.join(self.output_folder,
+                                    f"{metadata['date']}_{metadata['drive']}_{metadata['img_id']}.png")
+            os.makedirs(os.path.dirname(save_dir), exist_ok=True)
+            write_depth(pred, save_dir)
+
+    def evaluate(self):
+        self._logger.info(f'depth saved to {self.output_folder}{" w/ gt scale" if self.use_gt_scale else ""}')
+        return

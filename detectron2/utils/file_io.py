@@ -1,9 +1,11 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
+import cv2
+import numpy as np
+
 from iopath.common.file_io import HTTPURLHandler, OneDrivePathHandler, PathHandler
 from iopath.common.file_io import PathManager as PathManagerBase
 
 __all__ = ["PathManager", "PathHandler"]
-
 
 PathManager = PathManagerBase()
 """
@@ -25,7 +27,7 @@ class Detectron2Handler(PathHandler):
         return [self.PREFIX]
 
     def _get_local_path(self, path):
-        name = path[len(self.PREFIX) :]
+        name = path[len(self.PREFIX):]
         return PathManager.get_local_path(self.S3_DETECTRON2_PREFIX + name)
 
     def _open(self, path, mode="r", **kwargs):
@@ -35,3 +37,9 @@ class Detectron2Handler(PathHandler):
 PathManager.register_handler(HTTPURLHandler())
 PathManager.register_handler(OneDrivePathHandler())
 PathManager.register_handler(Detectron2Handler())
+
+
+def write_depth(depth, save_path):
+    pred_depth_scaled = (depth * 255).astype(np.uint16)
+    cv2.imwrite(save_path, pred_depth_scaled, [cv2.IMWRITE_PNG_COMPRESSION, 3])
+    return

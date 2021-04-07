@@ -40,6 +40,8 @@ class MotionLearningModel(nn.Module):
         self.supervise_loss = silog_loss(cfg.LOSS.VARIANCE_FOCUS)
         self.var_loss_weight = cfg.LOSS.VAR_LOSS_WEIGHT
 
+        self.pose_use_depth = cfg.MODEL.POSE_NET.USE_DEPTH
+
         self.register_buffer("pixel_mean", torch.Tensor(cfg.MODEL.PIXEL_MEAN).view(1, -1, 1, 1))
         self.register_buffer("pixel_std", torch.Tensor(cfg.MODEL.PIXEL_STD).view(1, -1, 1, 1))
 
@@ -51,13 +53,24 @@ class MotionLearningModel(nn.Module):
         batch = to_cuda(batch, self.device)
 
         image_no_norm = batch["image"]
-        batch['image'] = (batch["image"] - self.pixel_mean) / self.pixel_std
+        context_no_norm = batch["context"][0]
+
+        batch["image"] = (batch["image"] - self.pixel_mean) / self.pixel_std
+        if self.pose_use_depth:
+            batch["image"] = \
+                torch.cat([batch["image"], (batch["context"][0] - self.pixel_mean) / self.pixel_std], 0)
 
         output = self.depth_net(batch)
 
+        if self.pose_use_depth:
+            depth_image, depth_context = torch.chunk(output['depth_pred'][0], 2, dim=0)
+            image_no_norm = torch.cat([image_no_norm, depth_image], 1)
+            context_no_norm = torch.cat([image_no_norm, context_no_norm], 1)
+            output['depth_pred'] = [torch.chunk(d, 2, dim=0)[0] for d in output['depth_pred']]
+
         if self.training:
             # [B, N, 6]
-            pose_vec = self.pose_net(image_no_norm, batch['context'])
+            pose_vec = self.pose_net(image_no_norm, context_no_norm)
             poses = [pose_vec2mat(pose_vec[:, i]) for i in range(pose_vec.shape[1])]
 
             photometric_loss, smoothness_loss = self.calc_self_sup_losses(batch['image_orig'],
@@ -88,7 +101,6 @@ class MotionLearningModel(nn.Module):
         photo_losses = [[] for _ in range(num_scales)]
         smooth_losses = []
 
-        # todo understand this!
         for i in range(num_scales):
 
             resized_image = resize_img(image, dst_size=depth_pred[i].shape[-2:])

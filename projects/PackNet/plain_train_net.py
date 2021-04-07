@@ -221,7 +221,7 @@ def main(args):
     cfg = setup(args)
 
     model = build_model(cfg)
-    logger.info("Model:\n{}".format(model))
+    # logger.info("Model:\n{}".format(model))
     if args.eval_only:
         DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
             cfg.MODEL.WEIGHTS, resume=args.resume

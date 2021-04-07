@@ -14,8 +14,10 @@ class GooglePoseNet(nn.Module):
         super().__init__()
         group_norm = cfg.MODEL.POSE_NET.GROUP_NORM
         self.learn_scale = cfg.MODEL.POSE_NET.LEARN_SCALE
+
+        in_channels = 4 * 2 if cfg.MODEL.POSE_NET.USE_DEPTH else 3 * 2
         channels = [16, 32, 64, 128, 256, 256, 256]
-        self.conv1 = conv_gn(3 * 2, channels[0], kernel_size=7, group_norm=group_norm)
+        self.conv1 = conv_gn(in_channels, channels[0], kernel_size=7, group_norm=group_norm)
         self.conv2 = conv_gn(channels[0], channels[1], kernel_size=5, group_norm=group_norm)
         self.conv3 = conv_gn(channels[1], channels[2], group_norm=group_norm)
         self.conv4 = conv_gn(channels[2], channels[3], group_norm=group_norm)
@@ -40,7 +42,7 @@ class GooglePoseNet(nn.Module):
 
     def forward(self, image, context):
         B, _, _, _ = image.shape
-        inputs = torch.cat([image, *context], 1)
+        inputs = torch.cat([image, context], 1)
         out_conv1 = self.conv1(inputs)
         out_conv2 = self.conv2(out_conv1)
         out_conv3 = self.conv3(out_conv2)
@@ -55,9 +57,9 @@ class GooglePoseNet(nn.Module):
         if self.learn_scale:
             rot_scale = torch.relu(self.rot_scale - 0.001) + 0.001
             trans_scale = torch.relu(self.trans_scale - 0.001) + 0.001
-            pose = torch.stack([rot * rot_scale, trans * trans_scale], -1)
+            pose = torch.cat([rot * rot_scale, trans * trans_scale], -1)
         else:
-            pose = torch.stack([rot * 0.01, trans * 0.01], -1)
+            pose = torch.cat([rot * 0.01, trans * 0.01], -1)
 
         return pose
 
@@ -110,7 +112,7 @@ class GoogleMotionNet(nn.Module):
 
     def forward(self, image, context):
         B, _, _, _ = image.shape
-        inputs = torch.cat([image, *context], 1)
+        inputs = torch.cat([image, context], 1)
         out_conv1 = self.conv1(inputs)
         out_conv2 = self.conv2(out_conv1)
         out_conv3 = self.conv3(out_conv2)
@@ -130,15 +132,15 @@ class GoogleMotionNet(nn.Module):
         residual_motion = self.refiner3(residual_motion, out_conv3)
         residual_motion = self.refiner2(residual_motion, out_conv2)
         residual_motion = self.refiner1(residual_motion, out_conv1)
-        residual_motion = self.refiner0(residual_motion, image)
+        residual_motion = self.refiner0(residual_motion, inputs)
 
         if self.learn_scale:
             rot_scale = torch.relu(self.rot_scale - 0.001) + 0.001
             trans_scale = torch.relu(self.trans_scale - 0.001) + 0.001
-            pose = torch.stack([rot * rot_scale, trans * trans_scale], -1)
+            pose = torch.cat([rot[:, :, 0, 0] * rot_scale, trans[:, :, 0, 0] * trans_scale], -1)
             residual_motion = residual_motion * trans_scale
         else:
-            pose = torch.stack([rot * 0.01, trans * 0.01], -1)
+            pose = torch.cat([rot[:, :, 0, 0] * 0.01, trans[:, :, 0, 0] * 0.01], -1)
             residual_motion = residual_motion * 0.01
 
         if self.mask_motion:
@@ -153,10 +155,12 @@ class GoogleMotionNet(nn.Module):
 class MotionRefiner(nn.Module):
     def __init__(self, trans_channel, skip_channel, group_norm):
         super().__init__()
-        self.conv1 = conv_gn(trans_channel + skip_channel, skip_channel, kernel_size=3, group_norm=group_norm)
-        self.conv21 = conv_gn(trans_channel + skip_channel, skip_channel, kernel_size=3, group_norm=group_norm)
-        self.conv22 = conv_gn(skip_channel, skip_channel, kernel_size=3, group_norm=group_norm)
-        self.conv3 = conv_gn(skip_channel * 2, trans_channel, kernel_size=1, group_norm=group_norm)
+        self.conv1 = conv_gn(trans_channel + skip_channel, skip_channel,
+                             kernel_size=3, group_norm=group_norm, stride=1)
+        self.conv21 = conv_gn(trans_channel + skip_channel, skip_channel,
+                              kernel_size=3, group_norm=group_norm, stride=1)
+        self.conv22 = conv_gn(skip_channel, skip_channel, kernel_size=3, group_norm=group_norm, stride=1)
+        self.conv3 = conv_gn(skip_channel * 2, trans_channel, kernel_size=1, group_norm=group_norm, stride=1)
 
     def forward(self, trans, trans_skip):
         upsampled_trans = F.interpolate(trans, size=trans_skip.shape[-2:], mode='bilinear', align_corners=True)
@@ -164,5 +168,5 @@ class MotionRefiner(nn.Module):
         out1 = self.conv1(inputs)
         out2 = self.conv22(self.conv21(inputs))
         out = torch.cat([out1, out2], 1)
-        out = trans + self.conv3(out)
+        out = upsampled_trans + self.conv3(out)
         return out

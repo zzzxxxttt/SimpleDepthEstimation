@@ -107,9 +107,9 @@ class KittiDepthTrain_v2(DatasetBase):
             lidar_calib = read_kitti_calib_file(os.path.join(self.data_root, date, 'calib_velo_to_cam.txt'))
             self.calib_cache[date] = {'cam_calib': cam_calib,
                                       'lidar_calib': lidar_calib}
-        P2 = np.eye(4)
+        P2 = np.eye(4, dtype=np.float32)
         P2[:3, :] = np.array(cam_calib['P_rect_02']).reshape([3, 4])
-        R0 = np.eye(4)
+        R0 = np.eye(4, dtype=np.float32)
         R0[:3, :3] = np.array(cam_calib['R_rect_00']).reshape([3, 3])
         data['intrinsics'] = P2[:3, :3]
 
