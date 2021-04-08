@@ -23,6 +23,8 @@ import logging
 import os
 import math
 from collections import OrderedDict
+import numpy as np
+
 import torch
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel
@@ -143,7 +145,7 @@ def do_train(cfg, model, resume=False):
                                   {'name': 'Pose',
                                    'params': model.module.pose_net.parameters(),
                                    'lr': cfg.SOLVER.POSE_LR,
-                                   'weight_decay': 0.0}])
+                                   'weight_decay': 0.0}], )
     # Training parameters
 
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
@@ -178,6 +180,9 @@ def do_train(cfg, model, resume=False):
                 noise_stddev = cfg.MODEL.DEPTH_NET.NOISE_STDDEV * \
                                (min(global_step / float(cfg.MODEL.DEPTH_NET.RAMPUP_ITERS), 1.0)) ** 2
                 model.module.depth_net.set_stddev(noise_stddev)
+
+                motion_weight = np.clip(2 * global_step / cfg.MODEL.POSE_NET.BURN_IN_ITERS - 1, 0.0, 1.0)
+                model.module.pose_net.motion_weight = motion_weight
 
                 output = model(data)
 

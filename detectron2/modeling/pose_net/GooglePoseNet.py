@@ -66,13 +66,12 @@ class GooglePoseNet(nn.Module):
 
 @POSE_NET_REGISTRY.register()
 class GoogleMotionNet(nn.Module):
-    """Pose network """
-
     def __init__(self, cfg, **kwargs):
         super().__init__()
         group_norm = cfg.MODEL.POSE_NET.GROUP_NORM
         self.learn_scale = cfg.MODEL.POSE_NET.LEARN_SCALE
         self.mask_motion = cfg.MODEL.POSE_NET.MASK_MOTION
+        self.motion_weight = 1.0
 
         in_channels = 4 * 2 if cfg.MODEL.POSE_NET.USE_DEPTH else 3 * 2
         channels = [16, 32, 64, 128, 256, 256, 256]
@@ -149,7 +148,7 @@ class GoogleMotionNet(nn.Module):
             # A mask of shape [B, h, w, 1]
             residual_motion *= (sq_residual_motion > mean_sq_residual_motion).float()
 
-        return pose, residual_motion
+        return pose, residual_motion * self.motion_weight
 
 
 class MotionRefiner(nn.Module):
