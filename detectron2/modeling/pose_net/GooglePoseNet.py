@@ -61,7 +61,7 @@ class GooglePoseNet(nn.Module):
         else:
             pose = torch.cat([rot * 0.01, trans * 0.01], -1)
 
-        return pose
+        return {'pose': pose}
 
 
 @POSE_NET_REGISTRY.register()
@@ -148,7 +148,7 @@ class GoogleMotionNet(nn.Module):
             # A mask of shape [B, h, w, 1]
             residual_motion *= (sq_residual_motion > mean_sq_residual_motion).float()
 
-        return pose, residual_motion * self.motion_weight
+        return {'pose': pose, 'motion': residual_motion * self.motion_weight}
 
 
 class MotionRefiner(nn.Module):

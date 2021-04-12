@@ -92,6 +92,7 @@ def add_config(cfg):
     _C.MODEL.POSE_NET = CN()
     _C.MODEL.POSE_NET.NAME = ''
     _C.MODEL.POSE_NET.NUM_CONTEXTS = 0
+    _C.MODEL.POSE_NET.CYCLE_CONSISTENCY = False
 
     _C.LOSS.SSIM_WEIGHT = 0.0
     _C.LOSS.C1 = 0.0
