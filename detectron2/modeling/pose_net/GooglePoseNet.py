@@ -52,14 +52,14 @@ class GooglePoseNet(nn.Module):
         out_conv7 = self.conv7(out_conv6)
 
         pose = self.pose_pred(out_conv7.mean([2, 3], keepdim=True)).view(B, 6)
-        rot, trans = pose[:, :3], pose[:, 3:]
+        trans, rot = pose[:, :3], pose[:, 3:]
 
         if self.learn_scale:
             rot_scale = torch.relu(self.rot_scale - 0.001) + 0.001
             trans_scale = torch.relu(self.trans_scale - 0.001) + 0.001
-            pose = torch.cat([rot * rot_scale, trans * trans_scale], -1)
+            pose = torch.cat([trans * trans_scale, rot * rot_scale], -1)
         else:
-            pose = torch.cat([rot * 0.01, trans * 0.01], -1)
+            pose = torch.cat([trans * 0.01, rot * 0.01], -1)
 
         return {'pose': pose}
 
@@ -121,7 +121,7 @@ class GoogleMotionNet(nn.Module):
         out_conv7 = self.conv7(out_conv6)
 
         pose = self.pose_pred(out_conv7.mean([2, 3], keepdim=True))
-        rot, trans = pose[:, :3, :, :], pose[:, 3:, :, :]
+        trans, rot = pose[:, :3, :, :], pose[:, 3:, :, :]
 
         residual_motion = self.conv8(trans)
         residual_motion = self.refiner7(residual_motion, out_conv7)
@@ -134,12 +134,12 @@ class GoogleMotionNet(nn.Module):
         residual_motion = self.refiner0(residual_motion, inputs)
 
         if self.learn_scale:
-            rot_scale = torch.relu(self.rot_scale - 0.001) + 0.001
             trans_scale = torch.relu(self.trans_scale - 0.001) + 0.001
-            pose = torch.cat([rot[:, :, 0, 0] * rot_scale, trans[:, :, 0, 0] * trans_scale], -1)
+            rot_scale = torch.relu(self.rot_scale - 0.001) + 0.001
+            pose = torch.cat([trans[:, :, 0, 0] * trans_scale, rot[:, :, 0, 0] * rot_scale], -1)
             residual_motion = residual_motion * trans_scale
         else:
-            pose = torch.cat([rot[:, :, 0, 0] * 0.01, trans[:, :, 0, 0] * 0.01], -1)
+            pose = torch.cat([trans[:, :, 0, 0] * 0.01, rot[:, :, 0, 0] * 0.01], -1)
             residual_motion = residual_motion * 0.01
 
         if self.mask_motion:

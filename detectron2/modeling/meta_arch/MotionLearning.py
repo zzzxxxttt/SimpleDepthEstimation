@@ -39,6 +39,7 @@ class MotionLearningModel(nn.Module):
         self.sup_loss_weight = cfg.LOSS.SUPERVISED_WEIGHT
         self.supervise_loss = silog_loss(cfg.LOSS.VARIANCE_FOCUS)
         self.var_loss_weight = cfg.LOSS.VAR_LOSS_WEIGHT
+        self.scale_normalize = cfg.LOSS.SCALE_NORMALIZE
 
         self.pose_use_depth = cfg.MODEL.POSE_NET.USE_DEPTH
         self.cycle_consistency = cfg.MODEL.POSE_NET.CYCLE_CONSISTENCY
@@ -56,30 +57,27 @@ class MotionLearningModel(nn.Module):
         frame1 = batch["image"]
         frame2 = batch["context"][0]
 
-        if self.pose_use_depth:
+        if self.training:
             output = self.depth_net({'image': torch.cat([(frame1 - self.pixel_mean) / self.pixel_std,
                                                          (frame2 - self.pixel_mean) / self.pixel_std], 0)})
-        else:
-            output = self.depth_net({'image': (frame1 - self.pixel_mean) / self.pixel_std})
 
-        if self.pose_use_depth:
-            depth1, depth2 = torch.chunk(output['depth_pred'][0], 2, dim=0)
-            frame1 = torch.cat([frame1, depth1], 1)
-            frame2 = torch.cat([frame2, depth2], 1)
-            output['depth_pred'] = [torch.chunk(d, 2, dim=0)[0] for d in output['depth_pred']]
+            depth1, depth2 = zip(*[torch.chunk(d, 2, dim=0) for d in output['depth_pred']])
 
-        if self.cycle_consistency:
-            frame1, frame2 = torch.cat([frame1, frame2], 0), torch.cat([frame2, frame1], 0)
+            if self.pose_use_depth:
+                frame1 = torch.cat([frame1, depth1[0]], 1)
+                frame2 = torch.cat([frame2, depth2[0]], 1)
 
-        if self.training:
-            # [B, N, 6]
-            pose_out = self.pose_net(frame1, frame2)
+            if self.cycle_consistency:
+                frame1, frame2 = torch.cat([frame1, frame2], 0), torch.cat([frame2, frame1], 0)
 
-            poses = [pose_vec2mat(pose_out['pose'][:, i]) for i in range(pose_out['pose'].shape[1])]
+            pose_out = self.pose_net(frame1, frame2)  # [B, 6]
 
-            photometric_loss, smoothness_loss = self.calc_self_sup_losses(batch['image_orig'],
-                                                                          batch['context_orig'],
-                                                                          output['depth_pred'],
+            poses = pose_vec2mat(pose_out['pose'])  # [B, 4, 4]
+
+            photometric_loss, smoothness_loss = self.calc_self_sup_losses(frame1,
+                                                                          frame2,
+                                                                          depth1,
+                                                                          depth2,
                                                                           batch['intrinsics'],
                                                                           poses)
             output['rec_loss'] = photometric_loss
@@ -92,40 +90,47 @@ class MotionLearningModel(nn.Module):
                 output['silog_loss'] = self.sup_loss_weight * sum(sup_losses) / len(sup_losses)
 
             if self.var_loss_weight > 0.0:
-                var_losses = [variance_loss(d) for d in output['depth_pred']]
+                var_losses = [variance_loss(d) / (2 ** i) for i, d in enumerate(output['depth_pred'])]
                 output['var_loss'] = self.var_loss_weight * sum(var_losses) / len(var_losses)
 
         else:
+            output = self.depth_net({'image': (frame1 - self.pixel_mean) / self.pixel_std})
             output['depth_pred'] = post_process(output['depth_pred'][0], batch)
         return output
 
-    def calc_self_sup_losses(self, image, contexts, depth_pred, intrinsics, poses):
-        num_scales = len(depth_pred)
+    def calc_self_sup_losses(self, frame1, frame2, depth1, depth2, intrinsics, poses):
+        num_scales = len(depth1)
 
         photo_losses = [[] for _ in range(num_scales)]
         smooth_losses = []
 
+        if self.scale_normalize:
+            depth1 = [d / d.mean() for d in depth1]
+            depth2 = [d / d.mean() for d in depth2]
+
         for i in range(num_scales):
 
-            resized_image = resize_img(image, dst_size=depth_pred[i].shape[-2:])
+            resized_frame1 = resize_img(frame1, dst_size=depth1[i].shape[-2:])
+            resized_frame2 = resize_img(frame2, dst_size=depth2[i].shape[-2:])
+
             resized_intrinsics = scale_intrinsics(intrinsics.clone(),
-                                                  x_scale=depth_pred[i].shape[-1] / image.shape[-1],
-                                                  y_scale=depth_pred[i].shape[-2] / image.shape[-2])
+                                                  x_scale=depth1[i].shape[-1] / frame1.shape[-1],
+                                                  y_scale=depth1[i].shape[-2] / frame1.shape[-2])
 
-            for j, (img_target, pose) in enumerate(zip(contexts, poses)):
-                resized_target = resize_img(img_target, dst_size=depth_pred[i].shape[-2:])
+            for j, (img_target, pose) in enumerate(zip(frame2, poses)):
+                resized_target = resize_img(img_target, dst_size=depth1[i].shape[-2:])
 
-                photo_losses[i].append(self.self_supervise_loss(resized_image,
+                photo_losses[i].append(self.self_supervise_loss(resized_frame1,
                                                                 resized_target,
-                                                                depth_pred[i],
+                                                                depth1[i],
                                                                 resized_intrinsics,
                                                                 pose))
 
                 if self.use_automask:
-                    photo_losses[i].append(self.self_supervise_loss(resized_image, resized_target))
+                    photo_losses[i].append(self.self_supervise_loss(resized_frame1, resized_target))
 
             if self.smooth_loss_weight > 0.0:
-                smooth_losses.append(cal_smoothness_loss(depth_pred[i], resized_image))
+                smooth_losses.append(cal_smoothness_loss(depth1[i], resized_frame1))
 
         # Calculate reduced photometric loss
         if self.photometric_reduce == 'mean':
@@ -138,6 +143,6 @@ class MotionLearningModel(nn.Module):
         # average over scales
         photo_loss = sum(photo_losses) / num_scales
 
-        smooth_loss = sum([s / 2 ** i for i, s in enumerate(smooth_losses)]) / num_scales
+        smooth_loss = sum([s / (2 ** i) for i, s in enumerate(smooth_losses)]) / num_scales
 
         return photo_loss, smooth_loss
