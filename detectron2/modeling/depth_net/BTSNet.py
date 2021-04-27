@@ -351,7 +351,7 @@ class BtsModel(nn.Module):
         self.flip_prob = cfg.MODEL.DEPTH_NET.FLIP_PROB
 
     def forward(self, data):
-        image = data['image']
+        image = data['depth_net_input']
         flip = False
         if self.training and random.random() < self.flip_prob:
             image = torch.flip(image, [3])

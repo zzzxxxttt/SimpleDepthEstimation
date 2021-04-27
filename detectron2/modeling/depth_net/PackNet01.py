@@ -121,7 +121,7 @@ class PackNet01(nn.Module):
         Runs the network and returns inverse depth maps
         (4 scales if training and 1 if not).
         """
-        image = data['image']
+        image = data['depth_net_input']
         flip = False
         if self.training and random.random() < self.flip_prob:
             image = torch.flip(image, [3])
@@ -202,6 +202,6 @@ class PackNet01(nn.Module):
             disps = [torch.flip(d, [3]) for d in disps]
 
         if self.upsample_depth:
-            disps = [resize_img(d, data['image'].shape[-2:], mode='nearest') for d in disps]
+            disps = [resize_img(d, data['depth_net_input'].shape[-2:], mode='nearest') for d in disps]
 
         return {'depth_pred': disps}

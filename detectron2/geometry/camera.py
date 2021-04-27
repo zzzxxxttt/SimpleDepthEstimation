@@ -42,6 +42,14 @@ def resize_img(image, dst_size, mode='bilinear'):
         return resized_image
 
 
+def resize_img_avgpool(image, dst_size):
+    if image.shape[-2] == dst_size[-2] and image.shape[-1] == dst_size[-1]:
+        return image
+    else:
+        resized_image = F.adaptive_avg_pool2d(image, dst_size)
+        return resized_image
+
+
 @lru_cache(maxsize=None)
 def meshgrid(B, H, W, dtype, device, normalized=False):
     """

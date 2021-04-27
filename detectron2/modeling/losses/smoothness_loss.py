@@ -33,24 +33,6 @@ def gradient_y(image):
     return image[:, :, :-1, :] - image[:, :, 1:, :]
 
 
-def inv_depths_normalize(inv_depth):
-    """
-    Inverse depth normalization
-
-    Parameters
-    ----------
-    inv_depths : list of torch.Tensor [B,1,H,W]
-        Inverse depth maps
-
-    Returns
-    -------
-    norm_inv_depths : list of torch.Tensor [B,1,H,W]
-        Normalized inverse depth maps
-    """
-    mean_inv_depth = inv_depth.mean(2, True).mean(3, True)
-    return inv_depth / mean_inv_depth.clamp(min=1e-6)
-
-
 def cal_smoothness_loss(depth, image):
     """
     Calculate smoothness values for inverse depths
@@ -73,7 +55,9 @@ def cal_smoothness_loss(depth, image):
     """
     inv_depth = 1. / depth.clamp(min=1e-6)
 
-    inv_depths_norm = inv_depths_normalize(inv_depth)
+    mean_inv_depth = inv_depth.mean(2, True).mean(3, True)
+    inv_depths_norm = inv_depth / mean_inv_depth.clamp(min=1e-6)
+
     inv_depth_gradients_x = gradient_x(inv_depths_norm)
     inv_depth_gradients_y = gradient_y(inv_depths_norm)
 
