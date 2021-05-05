@@ -8,7 +8,7 @@ from ..depth_net import build_depth_net
 from ..pose_net import build_pose_net
 from ...utils.memory import to_cuda
 from ...geometry.pose_utils import pose_vec2mat
-from ...geometry.camera import resize_img, scale_intrinsics, resize_img_avgpool
+from ...geometry.camera import resize_img, scale_intrinsics, resize_img_avgpool, view_synthesis
 from ..losses.smoothness_loss import cal_smoothness_loss
 from ..losses.photometric_loss import PhotometricLoss
 from ..losses.losses import silog_loss, variance_loss
@@ -133,6 +133,19 @@ class MotionLearningModel(nn.Module):
             resized_intrinsics = scale_intrinsics(intrinsics.clone(),
                                                   x_scale=depth1[i].shape[-1] / frame1.shape[-1],
                                                   y_scale=depth1[i].shape[-2] / frame1.shape[-2])
+
+            sampled2, depth_in_2, proj_mask2 = view_synthesis(image_B=torch.cat([resized_frame2, depth2[i]], 1),
+                                                              depth_A=depth1[i],
+                                                              intrinsics=resized_intrinsics,
+                                                              T_A_to_B=pose_1to2)
+
+            sampled1, depth_in_1, proj_mask1 = view_synthesis(image_B=torch.cat([resized_frame1, depth1[i]], 1),
+                                                              depth_A=depth2[i],
+                                                              intrinsics=resized_intrinsics,
+                                                              T_A_to_B=pose_2to1)
+
+            sampled_frame2, sampled_depth2 = torch.split(sampled2, [3, 1], dim=1)
+            sampled_frame1, sampled_depth1 = torch.split(sampled1, [3, 1], dim=1)
 
             photometric_losses[i].append(self.self_supervise_loss(resized_frame1,
                                                                   resized_frame2,

@@ -143,7 +143,14 @@ def points_to_img(points, T):
     # Normalize points
     X = proj[:, 0]
     Y = proj[:, 1]
-    Z = proj[:, 2].clamp(min=1e-5)
+    Z = proj[:, 2]
+
+    valid_proj_mask = (X >= 0) & (X < W) & \
+                      (Y >= 0) & (Y < H) & \
+                      (Z > 0)
+
+    Z = Z.clamp(min=1e-5)
+
     Xnorm = 2 * (X / Z) / (W - 1) - 1.
     Ynorm = 2 * (Y / Z) / (H - 1) - 1.
 
@@ -154,4 +161,25 @@ def points_to_img(points, T):
     # Ynorm[Ymask] = 2.
 
     # Return pixel coordinates
-    return torch.stack([Xnorm, Ynorm], dim=-1).view(B, H, W, 2)
+    return torch.stack([Xnorm, Ynorm], dim=-1).view(B, H, W, 2), \
+           Z.view(B, H, W, 1), \
+           valid_proj_mask.view(B, H, W, 1)
+
+
+def view_synthesis(image_B, depth_A, intrinsics, T_A_to_B):
+    # Reconstruct world points from target_camera
+    T = torch.zeros([image_B.shape[0], 4, 4], device=image_B.device)
+    T[:, :3, :3] = inv_intrinsics(intrinsics)
+    points_A = img_to_points(depth_A, T)
+
+    # Project world points onto reference camera
+    T = T_A_to_B.clone()
+    T[:, :3, :3] = intrinsics.bmm(T[:, :3, :3])
+    T[:, :3, [3]] = intrinsics.bmm(T[:, :3, [3]])
+    points_A_coords_in_B, points_A_depth_in_B, valid_proj_mask = points_to_img(points_A, T)
+
+    # View-synthesis given the projected reference points
+    sampled_B = F.grid_sample(image_B, points_A_coords_in_B,
+                              mode='bilinear', padding_mode='zeros', align_corners=True)
+
+    return sampled_B, points_A_depth_in_B, valid_proj_mask
