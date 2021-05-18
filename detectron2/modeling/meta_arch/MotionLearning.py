@@ -11,6 +11,7 @@ from ...geometry.pose_utils import pose_vec2mat
 from ...geometry.camera import resize_img, scale_intrinsics, resize_img_avgpool, view_synthesis
 from ..losses.smoothness_loss import cal_smoothness_loss
 from ..losses.photometric_loss import PhotometricLoss
+from ..losses.ssim_loss import WeightedSSIM
 from ..losses.losses import silog_loss, variance_loss
 from .SupDepth import post_process
 
@@ -28,10 +29,10 @@ class MotionLearningModel(nn.Module):
 
         self.depth_net = build_depth_net(cfg)
         self.pose_net = build_pose_net(cfg)
-        self.self_supervise_loss = PhotometricLoss(ssim_loss_weight=cfg.LOSS.SSIM_WEIGHT,
-                                                   C1=cfg.LOSS.C1,
-                                                   C2=cfg.LOSS.C2,
-                                                   clip_loss=cfg.LOSS.CLIP)
+
+        self.ssim_loss_weight = cfg.LOSS.SSIM_WEIGHT
+        self.ssim = WeightedSSIM(cfg.LOSS.C1, cfg.LOSS.C2)
+        self.clip_loss = cfg.LOSS.CLIP
 
         self.use_automask = cfg.LOSS.AUTOMASK
         self.smooth_loss_weight = cfg.LOSS.SMOOTHNESS_WEIGHT
@@ -73,26 +74,63 @@ class MotionLearningModel(nn.Module):
                 frame1, frame2 = torch.cat([frame1, frame2], 0), \
                                  torch.cat([frame2, frame1], 0)
 
-            pose_out = self.pose_net(frame1, frame2)  # [B, 6]
+            pose_out = self.pose_net(frame1, frame2)  # pose: [2B, 6] motion: [2B, 3, H, W]
+            poses = pose_vec2mat(pose_out['pose'])  # [2B, 4, 4]
 
-            poses = pose_vec2mat(pose_out['pose'])  # [B, 4, 4]
+            pose_1to2 = poses
+            pose_2to1 = None
+            motion_1to2 = None
+            motion_2to1 = None
+            if pose_out['motion'] is not None:
+                motion_1to2 = pose_out['motion']
+                if self.cycle_consistency:
+                    pose_1to2, pose_2to1 = torch.chunk(poses, 2, dim=0)
+                    motion_1to2, motion_2to1 = torch.chunk(motion_1to2, 2, dim=0)
 
-            photometric_loss, smoothness_loss = self.calc_self_sup_losses(frame1, frame2,
-                                                                          depth1, depth2,
-                                                                          batch['intrinsics'],
-                                                                          poses, pose_out['motion'])
-            output['rec_loss'] = photometric_loss
-            output['smooth_loss'] = smoothness_loss
+            losses = {}
+            num_scales = len(depth1)
 
-            if self.sup_loss_weight > 0.0:
-                depth_gt = [resize_img(batch['depth_gt'], pred.shape[-2:], mode='nearest')
-                            for pred in output['depth_pred']]
-                sup_losses = [self.supervise_loss(pred, gt) for pred, gt in zip(output['depth_pred'], depth_gt)]
-                output['silog_loss'] = self.sup_loss_weight * sum(sup_losses) / len(sup_losses)
+            for i in range(num_scales):
 
-            if self.var_loss_weight > 0.0:
-                var_losses = [variance_loss(d) / (2 ** i) for i, d in enumerate(output['depth_pred'])]
-                output['var_loss'] = self.var_loss_weight * sum(var_losses) / len(var_losses)
+                resized_frame1 = resize_img_avgpool(frame1, dst_size=depth1[i].shape[-2:])
+                resized_frame2 = resize_img_avgpool(frame2, dst_size=depth2[i].shape[-2:])
+
+                resized_intrinsics = scale_intrinsics(batch['intrinsics'].clone(),
+                                                      x_scale=depth1[i].shape[-1] / frame1.shape[-1],
+                                                      y_scale=depth1[i].shape[-2] / frame1.shape[-2])
+
+                if motion_1to2 is not None:
+                    resized_motion_1to2 = resize_img_avgpool(motion_1to2, depth1[i].shape[-2:])
+                    translation_1to2 = resized_motion_1to2 + pose_1to2[:, :3, [3], None]
+                else:
+                    translation_1to2 = pose_1to2[:, :3, [3], None]
+
+                losses_A2B = self.calc_loss_(resized_frame1, resized_frame2,
+                                             depth1[i], depth2[i],
+                                             resized_intrinsics,
+                                             pose_1to2[:,:3,:3],
+                                             translation_1to2,
+                                             batch['depth_1_gt'])
+
+                losses = {k: v if k not in losses else v + losses[k] for k, v in losses_A2B.items()}
+
+                if pose_2to1 is not None:
+                    if motion_2to1 is not None:
+                        resized_motion_2to1 = resize_img_avgpool(motion_2to1, depth2[i].shape[-2:])
+                        translation_2to1 = resized_motion_2to1 + pose_2to1[:, :3, [3], None]
+                    else:
+                        translation_2to1 = pose_2to1[:, :3, [3], None]
+
+                    losses_B2A = self.calc_loss_(resized_frame2, resized_frame1,
+                                                 depth2[i], depth1[i],
+                                                 resized_intrinsics,
+                                                 pose_2to1[:,:3,:3],
+                                                 translation_2to1,
+                                                 batch['depth_2_gt'])
+
+                    losses = {k: v if k not in losses else v + losses[k] for k, v in losses_B2A.items()}
+
+            output.update(losses)
 
         else:
             batch['depth_net_input'] = (frame1 - self.pixel_mean) / self.pixel_std
@@ -101,71 +139,54 @@ class MotionLearningModel(nn.Module):
 
         return output
 
-    def calc_self_sup_losses(self, frame1, frame2, depth1, depth2, intrinsics, pose, motion=None):
-        num_scales = len(depth1)
-
-        photometric_losses = []
-        smooth_losses = []
-
-        depth_mean = [torch.mean(torch.cat([d1, d2], 0)) for d1, d2 in zip(depth1, depth2)]
+    def calc_loss_(self,
+                   frame_A, frame_B,
+                   depth_A, depth_B,
+                   intrinsics,
+                   R_A_to_B, t_A_to_B,
+                   depth_B_gt=None):
         if self.scale_normalize:
-            depth1 = [d / depth_mean for d in depth1]
-            depth2 = [d / depth_mean for d in depth2]
-            pose[:, :3, 3] /= depth_mean
-            if motion is not None:
-                motion /= depth_mean
+            depth_mean = torch.mean(torch.cat([depth_A, depth_B], 0))
+            depth_A_normalized = depth_A / depth_mean
+            t_A_to_B[:, :3, 3] /= depth_mean
+        else:
+            depth_A_normalized = depth_A
 
-        pose_1to2 = pose
-        pose_2to1 = None
-        motion_1to2 = None
-        motion_2to1 = None
-        if motion is not None:
-            motion_1to2 = motion
-            if self.cycle_consistency:
-                pose_1to2, pose_2to1 = torch.chunk(pose, 2, dim=0)
-                motion_1to2, motion_2to1 = torch.chunk(motion, 2, dim=0)
+        losses = {}
 
-        for i in range(num_scales):
+        sampled_values, depth_in_B, proj_mask = view_synthesis(torch.cat([frame_B, depth_B], 1),
+                                                               depth_A_normalized, intrinsics,
+                                                               R_A_to_B, t_A_to_B)
 
-            resized_frame1 = resize_img_avgpool(frame1, dst_size=depth1[i].shape[-2:])
-            resized_frame2 = resize_img_avgpool(frame2, dst_size=depth2[i].shape[-2:])
+        sampled_frame_B, sampled_depth_B = torch.split(sampled_values, [3, 1], dim=1)
 
-            resized_intrinsics = scale_intrinsics(intrinsics.clone(),
-                                                  x_scale=depth1[i].shape[-1] / frame1.shape[-1],
-                                                  y_scale=depth1[i].shape[-2] / frame1.shape[-2])
+        mask = (depth_in_B < sampled_depth_B).float()
 
-            sampled2, depth_in_2, proj_mask2 = view_synthesis(image_B=torch.cat([resized_frame2, depth2[i]], 1),
-                                                              depth_A=depth1[i],
-                                                              intrinsics=resized_intrinsics,
-                                                              T_A_to_B=pose_1to2)
+        depth_error = (depth_in_B - sampled_depth_B) ** 2
+        depth_error_2nd_moment = ((depth_error * mask).sum([1, 2, 3]) / (mask.sum([1, 2, 3]) + 1.0)) + 1e-4
+        depth_proximity_weight = (depth_error_2nd_moment / (depth_error + depth_error_2nd_moment))
+        depth_proximity_weight = (depth_proximity_weight * proj_mask.float()).detach()
 
-            sampled1, depth_in_1, proj_mask1 = view_synthesis(image_B=torch.cat([resized_frame1, depth1[i]], 1),
-                                                              depth_A=depth2[i],
-                                                              intrinsics=resized_intrinsics,
-                                                              T_A_to_B=pose_2to1)
+        l1_loss = torch.abs(sampled_frame_B - frame_A)
 
-            sampled_frame2, sampled_depth2 = torch.split(sampled2, [3, 1], dim=1)
-            sampled_frame1, sampled_depth1 = torch.split(sampled1, [3, 1], dim=1)
+        # SSIM loss
+        if self.ssim_loss_weight > 0.0:
+            ssim_loss, avg_weight = self.ssim(sampled_frame_B, frame_A, depth_proximity_weight)
+            # Weighted Sum: alpha * ssim + (1 - alpha) * l1
+            losses['photometric_losses'] = self.ssim_loss_weight * ssim_loss.mean(1, True) + \
+                                           (1 - self.ssim_loss_weight) * l1_loss.mean(1, True)
+        else:
+            losses['photometric_losses'] = l1_loss.mean(1, True)
 
-            photometric_losses[i].append(self.self_supervise_loss(resized_frame1,
-                                                                  resized_frame2,
-                                                                  depth1[i],
-                                                                  resized_intrinsics,
-                                                                  pose_1to2))
+        if self.smooth_loss_weight > 0.0:
+            losses['smooth_losses'] = cal_smoothness_loss(depth_B, frame_B)
 
-            if self.smooth_loss_weight > 0.0:
-                smooth_losses.append(cal_smoothness_loss(depth1[i], resized_frame1))
+        if self.sup_loss_weight > 0.0:
+            depth_gt = resize_img(depth_B_gt, depth_B.shape[-2:], mode='nearest')
+            losses['sup_losses'] = self.supervise_loss(depth_B, depth_gt)
 
-            if motion_1to2 is not None:
-                resized_motion_1to2 = resize_img_avgpool(motion_1to2, depth1[i].shape[-2:])
-                translation_1to2 = resized_motion_1to2 * pose_1to2[:, :3, [3], None]
-            if motion_2to1 is not None:
-                resized_motion_2to1 = resize_img_avgpool(motion_2to1, depth2[i].shape[-2:])
-                translation_2to1 = resized_motion_2to1 * pose_2to1[:, :3, [3], None]
+        if self.var_loss_weight > 0.0:
+            losses['var_loss'] = variance_loss(depth_B)
 
-        # average over scales
-        photo_loss = sum(photometric_losses) / num_scales
-
-        smooth_loss = sum([s / (2 ** i) for i, s in enumerate(smooth_losses)]) / num_scales
-
-        return photo_loss, self.smooth_loss_weight * smooth_loss
+        losses = {k: sum(v) / len(v) for k, v in losses.items()}
+        return losses

@@ -118,27 +118,29 @@ def image_grid(B, H, W, dtype, device, normalized=False):
     return grid
 
 
-def img_to_points(depth, T):
+def img_to_points(depth, R, t):
     B, C, H, W = depth.shape
     assert C == 1
-    assert T.dim() == 3
+    assert R.dim() == 3
+    assert t.dim() == 3
 
     # Create flat index grid
     grid = image_grid(B, H, W, depth.dtype, depth.device, normalized=False)  # [B,3,H,W]
     grid = grid * depth
     flat_grid = grid.view(B, 3, -1)  # [B,3,HW]
 
-    points = T[:, :3, :3].bmm(flat_grid) + T[:, :3, [3]]
+    points = R.bmm(flat_grid) + t
 
     return points.view(B, 3, H, W)
 
 
-def points_to_img(points, T):
+def points_to_img(points, R, t):
     B, C, H, W = points.shape
     assert C == 3
-    assert T.dim() == 3
+    assert R.dim() == 3
+    assert t.dim() == 3
 
-    proj = T[:, :3, :3].bmm(points.view(B, 3, -1)) + T[:, :3, [3]]
+    proj = R.bmm(points.view(B, 3, -1)) + t
 
     # Normalize points
     X = proj[:, 0]
@@ -166,17 +168,20 @@ def points_to_img(points, T):
            valid_proj_mask.view(B, H, W, 1)
 
 
-def view_synthesis(image_B, depth_A, intrinsics, T_A_to_B):
+def view_synthesis(image_B, depth_A, intrinsics, R_A_to_B, t_A_to_B):
+    R = R_A_to_B.clone()  # [B, 3, 3]
+    t = t_A_to_B.clone()  # [B, 3, 1, 1] or [B, 3, H, W]
+    B, _, H, W = t.shape
+
     # Reconstruct world points from target_camera
-    T = torch.zeros([image_B.shape[0], 4, 4], device=image_B.device)
-    T[:, :3, :3] = inv_intrinsics(intrinsics)
-    points_A = img_to_points(depth_A, T)
+    points_A = img_to_points(depth_A,
+                             R=inv_intrinsics(intrinsics),
+                             t=torch.zeros([image_B.shape[0], 3, 1], device=image_B.device))
 
     # Project world points onto reference camera
-    T = T_A_to_B.clone()
-    T[:, :3, :3] = intrinsics.bmm(T[:, :3, :3])
-    T[:, :3, [3]] = intrinsics.bmm(T[:, :3, [3]])
-    points_A_coords_in_B, points_A_depth_in_B, valid_proj_mask = points_to_img(points_A, T)
+    R = intrinsics.bmm(R)
+    t = intrinsics.bmm(t.view(B, 3, H * W))
+    points_A_coords_in_B, points_A_depth_in_B, valid_proj_mask = points_to_img(points_A, R, t)
 
     # View-synthesis given the projected reference points
     sampled_B = F.grid_sample(image_B, points_A_coords_in_B,
