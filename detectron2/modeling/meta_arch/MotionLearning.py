@@ -179,15 +179,17 @@ class MotionLearningModel(nn.Module):
 
         scale_w = 1.0 / 2 ** scale
 
-        l1_loss = torch.abs(sampled_frame_B - frame_A)
+        losses['depth_l1_loss'] = torch.abs(sampled_depth_B - depth_B) * mask*scale_w
+
+        losses['rgb_l1_loss'] = torch.abs(sampled_frame_B - frame_A).mean(1, True) * mask*scale_w
+
         # SSIM loss
         if self.ssim_loss_weight > 0.0:
-            ssim_loss, avg_weight = self.ssim(sampled_frame_B, frame_A, depth_proximity_weight)
+            rgb_ssim_loss, avg_weight = self.ssim(sampled_frame_B, frame_A, depth_proximity_weight)
+            rgb_ssim_loss = rgb_ssim_loss * avg_weight
             # Weighted Sum: alpha * ssim + (1 - alpha) * l1
-            losses['photometric_losses'] = (self.ssim_loss_weight * ssim_loss.mean(1, True) +
-                                            (1 - self.ssim_loss_weight) * l1_loss.mean(1, True)) * scale_w
-        else:
-            losses['photometric_losses'] = l1_loss.mean(1, True) * scale_w
+            losses['ssim_loss'] = self.ssim_loss_weight * rgb_ssim_loss.mean(1, True) * scale_w
+            losses['rgb_l1_loss'] = (1 - self.ssim_loss_weight) * losses['rgb_l1_loss']
 
         if self.smooth_loss_weight > 0.0:
             losses['smooth_losses'] = cal_smoothness_loss(depth_B_normalized, frame_B) * scale_w
