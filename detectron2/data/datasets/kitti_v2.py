@@ -28,12 +28,14 @@ class KittiDepthTrain_v2(DatasetBase):
 
         self.resize = dataset_cfg.RESIZE
         self.kb_crop = dataset_cfg.KB_CROP
-        self.with_pose = dataset_cfg.WITH_POSE
         self.depth_type = dataset_cfg.DEPTH_TYPE
 
         self.forward_context = dataset_cfg.FORWARD_CONTEXT
         self.backward_context = dataset_cfg.BACKWARD_CONTEXT
         self.stride = dataset_cfg.STRIDE
+
+        self.with_pose = dataset_cfg.WITH_POSE
+        self.with_context_depth = dataset_cfg.WITH_CONTEXT_DEPTH
 
         self.max_depth = cfg.MODEL.MAX_DEPTH
         self.to_tensor = transforms.ToTensor()
@@ -64,6 +66,7 @@ class KittiDepthTrain_v2(DatasetBase):
         # If using context, filter file list
         self.context_list = [[] for _ in range(len(self.metadatas))]
         self.with_context = self.backward_context != 0 or self.forward_context != 0
+
         if self.with_context:
             self.valid_inds = []
             for idx, (date, drive, img_id) in enumerate(self.metadatas):
@@ -107,6 +110,7 @@ class KittiDepthTrain_v2(DatasetBase):
             lidar_calib = read_kitti_calib_file(os.path.join(self.data_root, date, 'calib_velo_to_cam.txt'))
             self.calib_cache[date] = {'cam_calib': cam_calib,
                                       'lidar_calib': lidar_calib}
+
         P2 = np.eye(4, dtype=np.float32)
         P2[:3, :] = np.array(cam_calib['P_rect_02']).reshape([3, 4])
         R0 = np.eye(4, dtype=np.float32)
@@ -129,6 +133,20 @@ class KittiDepthTrain_v2(DatasetBase):
             data['context'] = [read_img(self._get_img_dir(*self.metadatas[ctx_idx]))
                                for ctx_idx in self.context_list[idx]]
 
+            if self.with_context_depth:
+                if self.depth_type == 'velodyne':
+                    data['context_depth_gt'] = \
+                        [read_npz_depth(self._get_npz_depth_dir(*self.metadatas[ctx_idx]))
+                         for ctx_idx in self.context_list[idx]]
+                elif self.depth_type == 'groundtruth':
+                    data['context_depth_gt'] = \
+                        [read_png_depth(self._get_png_depth_dir(*self.metadatas[ctx_idx]))
+                         for ctx_idx in self.context_list[idx]]
+                elif self.depth_type == 'refined':
+                    data['context_depth_gt'] = \
+                        [read_png_depth(self._get_refined_png_depth_dir(*self.metadatas[ctx_idx]))
+                         for ctx_idx in self.context_list[idx]]
+
         # data['lidar'] = read_bin(self._get_lidar_dir(date, drive, img_id))
 
         if self.kb_crop:
@@ -136,6 +154,8 @@ class KittiDepthTrain_v2(DatasetBase):
 
         if 'depth_gt' in data:
             data['depth_gt'] = np.clip(data['depth_gt'], 0, self.max_depth)
+        if 'context_depth_gt' in data:
+            data['context_depth_gt'] = [np.clip(d, 0, self.max_depth) for d in data['context_depth_gt']]
 
         if self.resize:
             data = resize(data, self.input_h, self.input_w)
@@ -157,6 +177,8 @@ class KittiDepthTrain_v2(DatasetBase):
             data['context_orig'] = [self.to_tensor(img) for img in data['context_orig']]
         if 'depth_gt' in data:
             data['depth_gt'] = torch.from_numpy(data['depth_gt'])[None, :, :]
+        if 'context_depth_gt' in data:
+            data['context_depth_gt'] = [torch.from_numpy(d)[None, :, :] for d in data['context_depth_gt']]
 
         return data
 

@@ -150,10 +150,10 @@ class GoogleResNet(nn.Module):
         (4 scales if training and 1 if not).
         """
         image = data['depth_net_input']
-        flip = False
-        if self.training and random.random() < self.flip_prob:
+
+        flip = random.random() < self.flip_prob
+        if self.training and flip:
             image = torch.flip(image, [3])
-            flip = True
 
         x = self.encoder(image)
         x = self.decoder(x)

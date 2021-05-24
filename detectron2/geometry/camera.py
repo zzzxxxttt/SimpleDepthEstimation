@@ -181,10 +181,13 @@ def view_synthesis(image_B, depth_A, intrinsics, R_A_to_B, t_A_to_B):
     # Project world points onto reference camera
     R = intrinsics.bmm(R)
     t = intrinsics.bmm(t.view(B, 3, H * W))
-    points_A_coords_in_B, points_A_depth_in_B, valid_proj_mask = points_to_img(points_A, R, t)
+
+    points_A_coords_in_B, \
+    points_A_depth_in_B, \
+    valid_proj_mask = points_to_img(points_A, R, t)
 
     # View-synthesis given the projected reference points
     sampled_B = F.grid_sample(image_B, points_A_coords_in_B,
                               mode='bilinear', padding_mode='zeros', align_corners=True)
 
-    return sampled_B, points_A_depth_in_B, valid_proj_mask
+    return sampled_B, points_A_depth_in_B[:, None, :, :, 0], valid_proj_mask[:, None, :, :, 0]

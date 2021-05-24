@@ -61,6 +61,9 @@ class MotionLearningModel(nn.Module):
         frame1 = batch["image"]
         frame2 = batch["context"][0]
 
+        frame1_gt = batch['depth_gt']
+        frame2_gt = batch['context_depth_gt'][0]
+
         if self.training:
             batch['depth_net_input'] = torch.cat([(frame1 - self.pixel_mean) / self.pixel_std,
                                                   (frame2 - self.pixel_mean) / self.pixel_std], 0)
@@ -68,15 +71,17 @@ class MotionLearningModel(nn.Module):
 
             depth1, depth2 = zip(*[torch.chunk(d, 2, dim=0) for d in output['depth_pred']])
 
+            pose_input_1 = frame1
+            pose_net_input_2 = frame2
             if self.pose_use_depth:
-                frame1 = torch.cat([frame1, depth1[0]], 1)
-                frame2 = torch.cat([frame2, depth2[0]], 1)
+                pose_input_1 = torch.cat([pose_input_1, depth1[0]], 1)
+                pose_net_input_2 = torch.cat([pose_net_input_2, depth2[0]], 1)
 
             if self.cycle_consistency:
-                frame1, frame2 = torch.cat([frame1, frame2], 0), \
-                                 torch.cat([frame2, frame1], 0)
+                pose_input_1, pose_net_input_2 = torch.cat([pose_input_1, pose_net_input_2], 0), \
+                                                 torch.cat([pose_net_input_2, pose_input_1], 0)
 
-            pose_out = self.pose_net(frame1, frame2)  # pose: [2B, 6] motion: [2B, 3, H, W]
+            pose_out = self.pose_net(pose_input_1, pose_net_input_2)  # pose: [2B, 6] motion: [2B, 3, H, W]
             poses = pose_vec2mat(pose_out['pose'])  # [2B, 4, 4]
 
             pose_1to2 = poses
@@ -112,7 +117,7 @@ class MotionLearningModel(nn.Module):
                                              pose_1to2[:, :3, :3],
                                              pose_1to2[:, :3, [3], None],
                                              resized_motion_1to2,
-                                             batch['depth_1_gt'])
+                                             frame2_gt)
 
                 losses = {k: v if k not in losses else v + losses[k] for k, v in losses_A2B.items()}
 
@@ -128,7 +133,7 @@ class MotionLearningModel(nn.Module):
                                                  pose_2to1[:, :3, :3],
                                                  pose_2to1[:, :3, [3], None],
                                                  resized_motion_2to1,
-                                                 batch['depth_2_gt'])
+                                                 frame1_gt)
 
                     losses = {k: v if k not in losses else v + losses[k] for k, v in losses_B2A.items()}
 
@@ -173,42 +178,45 @@ class MotionLearningModel(nn.Module):
         mask = (depth_in_B < sampled_depth_B).float()
 
         depth_error = (depth_in_B - sampled_depth_B) ** 2
-        depth_error_2nd_moment = ((depth_error * mask).sum([1, 2, 3]) / (mask.sum([1, 2, 3]) + 1.0)) + 1e-4
-        depth_proximity_weight = (depth_error_2nd_moment / (depth_error + depth_error_2nd_moment))
+        depth_err_2nd_mom = ((depth_error * mask).sum([1, 2, 3]) / (mask.sum([1, 2, 3]) + 1.0)) + 1e-4
+        depth_proximity_weight = \
+            (depth_err_2nd_mom.view(-1, 1, 1, 1) / (depth_error + depth_err_2nd_mom.view(-1, 1, 1, 1)))
         depth_proximity_weight = (depth_proximity_weight * proj_mask.float()).detach()
 
         scale_w = 1.0 / 2 ** scale
 
-        losses['depth_l1_loss'] = torch.abs(sampled_depth_B - depth_B) * mask*scale_w
+        losses['depth_l1_loss'] = (torch.abs(sampled_depth_B - depth_B) * mask).mean() * scale_w
 
-        losses['rgb_l1_loss'] = torch.abs(sampled_frame_B - frame_A).mean(1, True) * mask*scale_w
+        losses['rgb_l1_loss'] = (torch.abs(sampled_frame_B - frame_A).mean(1, True) * mask).mean() * scale_w
 
         # SSIM loss
         if self.ssim_loss_weight > 0.0:
             rgb_ssim_loss, avg_weight = self.ssim(sampled_frame_B, frame_A, depth_proximity_weight)
             rgb_ssim_loss = rgb_ssim_loss * avg_weight
             # Weighted Sum: alpha * ssim + (1 - alpha) * l1
-            losses['ssim_loss'] = self.ssim_loss_weight * rgb_ssim_loss.mean(1, True) * scale_w
-            losses['rgb_l1_loss'] = (1 - self.ssim_loss_weight) * losses['rgb_l1_loss']
+            losses['ssim_loss'] = rgb_ssim_loss.mean() * scale_w * self.ssim_loss_weight
+            losses['rgb_l1_loss'] = losses['rgb_l1_loss'] * (1 - self.ssim_loss_weight)
 
         if self.smooth_loss_weight > 0.0:
-            losses['smooth_losses'] = cal_smoothness_loss(depth_B_normalized, frame_B) * scale_w
+            losses['smooth_losses'] = \
+                cal_smoothness_loss(depth_B_normalized, frame_B) * scale_w * self.smooth_loss_weight
 
         t_norm = (t_A_to_B.norm(2, dim=[1, 2, 3], keepdim=True) * 3.0).mean()
         t_A_to_B_res_norm = t_A_to_B_res / torch.sqrt(t_norm + 1e-5)
 
-        if t_A_to_B.shape[-1] > 1 and self.motion_smooth_loss_weight > 0.0:
-            losses['motion_smooth_losses'] = cal_motion_smoothness_loss(t_A_to_B_res_norm) * scale_w
+        if translation_map.shape[-1] > 1 and self.motion_smooth_loss_weight > 0.0:
+            losses['motion_smooth_losses'] = \
+                cal_motion_smoothness_loss(t_A_to_B_res_norm) * scale_w * self.motion_smooth_loss_weight
 
-        if t_A_to_B.shape[-1] > 1 and self.motion_sparsity_loss_weight > 0.0:
-            losses['motion_sparsity_losses'] = sparsity_loss(t_A_to_B_res_norm) * scale_w
+        if translation_map.shape[-1] > 1 and self.motion_sparsity_loss_weight > 0.0:
+            losses['motion_sparsity_losses'] = \
+                sparsity_loss(t_A_to_B_res_norm) * scale_w * self.motion_sparsity_loss_weight
 
         if self.sup_loss_weight > 0.0:
             depth_gt = resize_img(depth_B_gt, depth_B.shape[-2:], mode='nearest')
-            losses['sup_losses'] = self.supervise_loss(depth_B, depth_gt) * scale_w
+            losses['sup_losses'] = self.supervise_loss(depth_B, depth_gt) * scale_w * self.sup_loss_weight
 
         if self.var_loss_weight > 0.0:
-            losses['var_loss'] = variance_loss(depth_B) * scale_w
+            losses['var_loss'] = variance_loss(depth_B) * scale_w * self.var_loss_weight
 
-        losses = {k: sum(v) / len(v) for k, v in losses.items()}
         return losses

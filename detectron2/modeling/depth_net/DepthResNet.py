@@ -40,8 +40,8 @@ class DepthResNet(nn.Module):
         self.decoder = DepthDecoder(num_ch_enc=self.encoder.num_ch_enc)
         self.scale_inv_depth = partial(disp_to_depth, min_depth=0.1, max_depth=cfg.MODEL.MAX_DEPTH)
 
-        self.upsample_depth = cfg.MODEL.DEPTH_NET.UPSAMPLE_DEPTH
         self.flip_prob = cfg.MODEL.DEPTH_NET.FLIP_PROB
+        self.upsample_depth = cfg.MODEL.DEPTH_NET.UPSAMPLE_DEPTH
 
     def forward(self, data):
         """
@@ -49,10 +49,10 @@ class DepthResNet(nn.Module):
         (4 scales if training and 1 if not).
         """
         image = data['depth_net_input']
-        flip = False
-        if self.training and random.random() < self.flip_prob:
+
+        flip = random.random() < self.flip_prob
+        if self.training and flip:
             image = torch.flip(image, [3])
-            flip = True
 
         x = self.encoder(image)
         x = self.decoder(x)

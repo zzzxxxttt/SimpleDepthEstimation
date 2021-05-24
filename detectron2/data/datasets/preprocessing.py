@@ -52,6 +52,9 @@ def resize(data, img_h, img_w):
     if 'depth_gt' in data:
         data['depth_gt'] = resize_depth_np(data['depth_gt'], (img_h, img_w))
 
+    if 'context_depth_gt' in data:
+        data['context_depth_gt'] = [resize_depth_np(d, (img_h, img_w)) for d in data['context_depth_gt']]
+
     return data
 
 
@@ -70,6 +73,9 @@ def random_crop(data, height, width):
 
     if 'depth_gt' in data:
         data['depth_gt'] = data['depth_gt'][y:y + height, x:x + width]
+
+    if 'context_depth_gt' in data:
+        data['context_depth_gt'] = [d[y:y + height, x:x + width] for d in data['context_depth_gt']]
 
     return data
 

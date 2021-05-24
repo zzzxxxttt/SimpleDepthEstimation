@@ -75,20 +75,19 @@ class WeightedSSIM(nn.Module):
 
     def forward(self, x, y, w):
         w = w + 1e-2
-        avg_w = F.avg_pool2d(w, kernel_size=3, padding=1)
+        avg_w = F.avg_pool2d(w, kernel_size=3, stride=1, padding=1)
         inverse_avg_w = 1.0 / (avg_w + 1e-2)
 
-        x, y = self.pad(x), self.pad(y)
-        mu_x = self.pool2d(x * w) * inverse_avg_w
-        mu_y = self.pool2d(y * w) * inverse_avg_w
+        mu_x = self.pool2d(self.pad(x * w)) * inverse_avg_w
+        mu_y = self.pool2d(self.pad(y * w)) * inverse_avg_w
 
         mu_x_mu_y = mu_x * mu_y
         mu_x_sq = mu_x.pow(2)
         mu_y_sq = mu_y.pow(2)
 
-        sigma_x = self.pool2d(x.pow(2) * w) * inverse_avg_w - mu_x_sq
-        sigma_y = self.pool2d(y.pow(2) * w) * inverse_avg_w - mu_y_sq
-        sigma_xy = self.pool2d(x * y * w) * inverse_avg_w - mu_x_mu_y
+        sigma_x = self.pool2d(self.pad(x.pow(2) * w)) * inverse_avg_w - mu_x_sq
+        sigma_y = self.pool2d(self.pad(y.pow(2) * w)) * inverse_avg_w - mu_y_sq
+        sigma_xy = self.pool2d(self.pad(x * y * w)) * inverse_avg_w - mu_x_mu_y
 
         if self.C1 == float('inf'):
             ssim_n = 2 * sigma_xy + self.C2
