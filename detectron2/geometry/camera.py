@@ -190,4 +190,7 @@ def view_synthesis(image_B, depth_A, intrinsics, R_A_to_B, t_A_to_B):
     sampled_B = F.grid_sample(image_B, points_A_coords_in_B,
                               mode='bilinear', padding_mode='zeros', align_corners=True)
 
-    return sampled_B, points_A_depth_in_B[:, None, :, :, 0], valid_proj_mask[:, None, :, :, 0]
+    return (sampled_B,
+            points_A_depth_in_B[:, None, :, :, 0],
+            points_A_coords_in_B,
+            valid_proj_mask[:, None, :, :, 0])

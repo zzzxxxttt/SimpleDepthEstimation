@@ -1,4 +1,5 @@
 import logging
+from collections import defaultdict
 
 import torch
 import torch.nn as nn
@@ -9,10 +10,10 @@ from ..pose_net import build_pose_net
 from ...utils.memory import to_cuda
 from ...geometry.pose_utils import pose_vec2mat
 from ...geometry.camera import resize_img, scale_intrinsics, resize_img_avgpool, view_synthesis
-from ..losses.smoothness_loss import cal_smoothness_loss, cal_motion_smoothness_loss
-from ..losses.photometric_loss import PhotometricLoss
+from ..losses.smoothness_loss import cal_smoothness_loss
+from ..losses.motion_loss import motion_consistency_loss, motion_smoothness_loss, motion_sparsity_loss
 from ..losses.ssim_loss import WeightedSSIM
-from ..losses.losses import silog_loss, variance_loss, sparsity_loss
+from ..losses.losses import silog_loss, variance_loss
 from .SupDepth import post_process
 
 logger = logging.getLogger(__name__)
@@ -35,17 +36,20 @@ class MotionLearningModel(nn.Module):
         self.clip_loss = cfg.LOSS.CLIP
 
         self.use_automask = cfg.LOSS.AUTOMASK
-        self.smooth_loss_weight = cfg.LOSS.SMOOTHNESS_WEIGHT
         self.photometric_reduce = cfg.LOSS.PHOTOMETRIC_REDUCE
-        self.sup_loss_weight = cfg.LOSS.SUPERVISED_WEIGHT
+        self.smooth_loss_w = cfg.LOSS.SMOOTHNESS_WEIGHT
+
+        self.sup_loss_w = cfg.LOSS.SUPERVISED_WEIGHT
         self.supervise_loss = silog_loss(cfg.LOSS.VARIANCE_FOCUS)
-        self.var_loss_weight = cfg.LOSS.VAR_LOSS_WEIGHT
-        self.motion_smooth_loss_weight = cfg.LOSS.MOTION_SMOOTHNESS_WEIGHT
-        self.motion_sparsity_loss_weight = cfg.LOSS.MOTION_SPARSITY_WEIGHT
+
+        self.var_loss_w = cfg.LOSS.VAR_LOSS_WEIGHT
+
+        self.motion_smooth_loss_w = cfg.LOSS.MOTION_SMOOTHNESS_WEIGHT
+        self.motion_sparsity_loss_w = cfg.LOSS.MOTION_SPARSITY_WEIGHT
+
         self.scale_normalize = cfg.LOSS.SCALE_NORMALIZE
 
         self.pose_use_depth = cfg.MODEL.POSE_NET.USE_DEPTH
-        self.cycle_consistency = cfg.MODEL.POSE_NET.CYCLE_CONSISTENCY
 
         self.register_buffer("pixel_mean", torch.Tensor(cfg.MODEL.PIXEL_MEAN).view(1, -1, 1, 1))
         self.register_buffer("pixel_std", torch.Tensor(cfg.MODEL.PIXEL_STD).view(1, -1, 1, 1))
@@ -77,27 +81,36 @@ class MotionLearningModel(nn.Module):
                 pose_input_1 = torch.cat([pose_input_1, depth1[0]], 1)
                 pose_net_input_2 = torch.cat([pose_net_input_2, depth2[0]], 1)
 
-            if self.cycle_consistency:
-                pose_input_1, pose_net_input_2 = torch.cat([pose_input_1, pose_net_input_2], 0), \
-                                                 torch.cat([pose_net_input_2, pose_input_1], 0)
+            pose_input_1, pose_net_input_2 = torch.cat([pose_input_1, pose_net_input_2], 0), \
+                                             torch.cat([pose_net_input_2, pose_input_1], 0)
 
-            pose_out = self.pose_net(pose_input_1, pose_net_input_2)  # pose: [2B, 6] motion: [2B, 3, H, W]
+            # pose: [2B, 6] motion: [2B, 3, H, W]
+            pose_out = self.pose_net(pose_input_1, pose_net_input_2)
             poses = pose_vec2mat(pose_out['pose'])  # [2B, 4, 4]
 
-            pose_1to2 = poses
-            pose_2to1 = None
-            motion_1to2 = None
-            motion_2to1 = None
+            pose_1to2, pose_2to1 = torch.chunk(poses, 2, dim=0)
+            motion_1to2, motion_2to1 = None, None
             if pose_out['motion'] is not None:
-                motion_1to2 = pose_out['motion']
-                if self.cycle_consistency:
-                    pose_1to2, pose_2to1 = torch.chunk(poses, 2, dim=0)
-                    motion_1to2, motion_2to1 = torch.chunk(motion_1to2, 2, dim=0)
+                motion_1to2, motion_2to1 = torch.chunk(pose_out['motion'], 2, dim=0)
 
-            losses = {}
+            if self.scale_normalize:
+                depth_mean = torch.mean(torch.cat([depth1[0], depth2[0]], 0))
+                depth1_normalized = [d / depth_mean for d in depth1]
+                depth2_normalized = [d / depth_mean for d in depth2]
+                pose_1to2[:, :3, 3] /= depth_mean
+                pose_2to1[:, :3, 3] /= depth_mean
+                if pose_out['motion'] is not None:
+                    motion_1to2 /= depth_mean
+                    motion_2to1 /= depth_mean
+            else:
+                depth1_normalized = depth1
+                depth2_normalized = depth2
+
+            losses = defaultdict(lambda: 0)
             num_scales = len(depth1)
 
             for i in range(num_scales):
+                scale_w = 1.0 / 2 ** i
 
                 resized_frame1 = resize_img_avgpool(frame1, dst_size=depth1[i].shape[-2:])
                 resized_frame2 = resize_img_avgpool(frame2, dst_size=depth2[i].shape[-2:])
@@ -106,36 +119,67 @@ class MotionLearningModel(nn.Module):
                                                       x_scale=depth1[i].shape[-1] / frame1.shape[-1],
                                                       y_scale=depth1[i].shape[-2] / frame1.shape[-2])
 
-                if motion_1to2 is not None:
+                R_1to2 = pose_1to2[:, :3, :3]
+                R_2to1 = pose_2to1[:, :3, :3]
+                t_1to2 = pose_1to2[:, :3, [3], None]
+                t_2to1 = pose_2to1[:, :3, [3], None]
+
+                if pose_out['motion'] is not None:
                     resized_motion_1to2 = resize_img_avgpool(motion_1to2, depth1[i].shape[-2:])
+                    resized_motion_2to1 = resize_img_avgpool(motion_2to1, depth2[i].shape[-2:])
+                    t_1to2 += resized_motion_1to2
+                    t_2to1 += resized_motion_2to1
                 else:
                     resized_motion_1to2 = None
+                    resized_motion_2to1 = None
 
-                losses_A2B = self.calc_loss_(resized_frame1, resized_frame2,
-                                             depth1[i], depth2[i],
-                                             resized_intrinsics,
-                                             pose_1to2[:, :3, :3],
-                                             pose_1to2[:, :3, [3], None],
-                                             resized_motion_1to2,
-                                             frame2_gt)
+                depth1_gt = resize_img(frame1_gt, depth1[i].shape[-2:], mode='nearest')
+                depth2_gt = resize_img(frame2_gt, depth2[i].shape[-2:], mode='nearest')
 
-                losses = {k: v if k not in losses else v + losses[k] for k, v in losses_A2B.items()}
+                output_1_to_2 = self.rgbd_consistency_loss(resized_frame1, resized_frame2,
+                                                           depth1_normalized[i], depth2_normalized[i],
+                                                           resized_intrinsics,
+                                                           R_1to2, t_1to2)
 
-                if pose_2to1 is not None:
-                    if motion_2to1 is not None:
-                        resized_motion_2to1 = resize_img_avgpool(motion_2to1, depth2[i].shape[-2:])
-                    else:
-                        resized_motion_2to1 = None
+                losses = {k: v * scale_w + losses[k] for k, v in output_1_to_2.items() if 'loss' in k}
 
-                    losses_B2A = self.calc_loss_(resized_frame2, resized_frame1,
-                                                 depth2[i], depth1[i],
-                                                 resized_intrinsics,
-                                                 pose_2to1[:, :3, :3],
-                                                 pose_2to1[:, :3, [3], None],
-                                                 resized_motion_2to1,
-                                                 frame1_gt)
+                output_2_to_1 = self.rgbd_consistency_loss(resized_frame2, resized_frame1,
+                                                           depth2_normalized[i], depth1_normalized[i],
+                                                           resized_intrinsics,
+                                                           R_2to1, t_2to1)
 
-                    losses = {k: v if k not in losses else v + losses[k] for k, v in losses_B2A.items()}
+                losses = {k: v * scale_w + losses[k] for k, v in output_2_to_1.items() if 'loss' in k}
+
+                if pose_out['motion'] is not None:
+                    rot_loss, trans_loss = motion_consistency_loss(output_1_to_2['coords_A_in_B'],
+                                                                   output_1_to_2['proj_mask'],
+                                                                   R_1to2, R_2to1,
+                                                                   t_1to2, t_2to1)
+                    losses['rot_losses'] += rot_loss * scale_w
+                    losses['trans_losses'] += trans_loss * scale_w
+
+                    m_1to2_scale = (resized_motion_1to2.norm(2, dim=[1, 2, 3], keepdim=True) * 3.0).mean()
+                    m_2to1_scale = (resized_motion_2to1.norm(2, dim=[1, 2, 3], keepdim=True) * 3.0).mean()
+                    m_1to2_normalized = resized_motion_1to2 / torch.sqrt(m_1to2_scale + 1e-5)
+                    m_2to1_normalized = resized_motion_2to1 / torch.sqrt(m_2to1_scale + 1e-5)
+
+                    if self.motion_smooth_loss_w > 0.0:
+                        losses['motion_smooth_loss'] += \
+                            motion_smoothness_loss(m_1to2_normalized) * scale_w * self.motion_smooth_loss_w
+                        losses['motion_smooth_loss'] += \
+                            motion_smoothness_loss(m_2to1_normalized) * scale_w * self.motion_smooth_loss_w
+
+                    if self.motion_sparsity_loss_w > 0.0:
+                        losses['motion_sparsity_loss'] += \
+                            motion_sparsity_loss(m_1to2_normalized) * scale_w * self.motion_sparsity_loss_w
+                        losses['motion_sparsity_loss'] += \
+                            motion_sparsity_loss(m_2to1_normalized) * scale_w * self.motion_sparsity_loss_w
+
+                if self.sup_loss_w > 0.0:
+                    losses['sup_losses'] += \
+                        self.supervise_loss(depth1[i], depth1_gt) * scale_w * self.sup_loss_w
+                    losses['sup_losses'] += \
+                        self.supervise_loss(depth2[i], depth2_gt) * scale_w * self.sup_loss_w
 
             output.update(losses)
 
@@ -146,32 +190,19 @@ class MotionLearningModel(nn.Module):
 
         return output
 
-    def calc_loss_(self,
-                   frame_A, frame_B,
-                   depth_A, depth_B,
-                   intrinsics,
-                   R_A_to_B, t_A_to_B, t_A_to_B_res=None,
-                   depth_B_gt=None,
-                   scale=0):
+    def rgbd_consistency_loss(self,
+                              frame_A, frame_B,
+                              depth_A, depth_B,
+                              intrinsics,
+                              R_A2B, t_A2B):
 
-        if self.scale_normalize:
-            depth_mean = torch.mean(torch.cat([depth_A, depth_B], 0))
-            depth_A_normalized = depth_A / depth_mean
-            depth_B_normalized = depth_B / depth_mean
-            t_A_to_B /= depth_mean
-            if t_A_to_B_res is not None:
-                t_A_to_B_res /= depth_mean
-        else:
-            depth_A_normalized = depth_A
-            depth_B_normalized = depth_B
+        return_dict = {}
 
-        translation_map = t_A_to_B if t_A_to_B_res is None else t_A_to_B + t_A_to_B_res
+        sampled_values, depth_in_B, points_A_coords_in_B, proj_mask = \
+            view_synthesis(torch.cat([frame_B, depth_B], 1), depth_A, intrinsics, R_A2B, t_A2B)
 
-        losses = {}
-
-        sampled_values, depth_in_B, proj_mask = view_synthesis(torch.cat([frame_B, depth_B_normalized], 1),
-                                                               depth_A_normalized, intrinsics,
-                                                               R_A_to_B, translation_map)
+        return_dict['coords_A_in_B'] = points_A_coords_in_B
+        return_dict['proj_mask'] = proj_mask
 
         sampled_frame_B, sampled_depth_B = torch.split(sampled_values, [3, 1], dim=1)
 
@@ -183,40 +214,22 @@ class MotionLearningModel(nn.Module):
             (depth_err_2nd_mom.view(-1, 1, 1, 1) / (depth_error + depth_err_2nd_mom.view(-1, 1, 1, 1)))
         depth_proximity_weight = (depth_proximity_weight * proj_mask.float()).detach()
 
-        scale_w = 1.0 / 2 ** scale
+        return_dict['depth_l1_loss'] = (torch.abs(sampled_depth_B - depth_B) * mask).mean()
 
-        losses['depth_l1_loss'] = (torch.abs(sampled_depth_B - depth_B) * mask).mean() * scale_w
-
-        losses['rgb_l1_loss'] = (torch.abs(sampled_frame_B - frame_A).mean(1, True) * mask).mean() * scale_w
+        return_dict['rgb_l1_loss'] = (torch.abs(sampled_frame_B - frame_A).mean(1, True) * mask).mean()
 
         # SSIM loss
         if self.ssim_loss_weight > 0.0:
             rgb_ssim_loss, avg_weight = self.ssim(sampled_frame_B, frame_A, depth_proximity_weight)
             rgb_ssim_loss = rgb_ssim_loss * avg_weight
             # Weighted Sum: alpha * ssim + (1 - alpha) * l1
-            losses['ssim_loss'] = rgb_ssim_loss.mean() * scale_w * self.ssim_loss_weight
-            losses['rgb_l1_loss'] = losses['rgb_l1_loss'] * (1 - self.ssim_loss_weight)
+            return_dict['ssim_loss'] = rgb_ssim_loss.mean() * self.ssim_loss_weight
+            return_dict['rgb_l1_loss'] *= (1 - self.ssim_loss_weight)
 
-        if self.smooth_loss_weight > 0.0:
-            losses['smooth_losses'] = \
-                cal_smoothness_loss(depth_B_normalized, frame_B) * scale_w * self.smooth_loss_weight
+        if self.smooth_loss_w > 0.0:
+            return_dict['smooth_losses'] = cal_smoothness_loss(depth_B, frame_B) * self.smooth_loss_w
 
-        t_norm = (t_A_to_B.norm(2, dim=[1, 2, 3], keepdim=True) * 3.0).mean()
-        t_A_to_B_res_norm = t_A_to_B_res / torch.sqrt(t_norm + 1e-5)
+        if self.var_loss_w > 0.0:
+            return_dict['var_loss'] = variance_loss(depth_B) * self.var_loss_w
 
-        if translation_map.shape[-1] > 1 and self.motion_smooth_loss_weight > 0.0:
-            losses['motion_smooth_losses'] = \
-                cal_motion_smoothness_loss(t_A_to_B_res_norm) * scale_w * self.motion_smooth_loss_weight
-
-        if translation_map.shape[-1] > 1 and self.motion_sparsity_loss_weight > 0.0:
-            losses['motion_sparsity_losses'] = \
-                sparsity_loss(t_A_to_B_res_norm) * scale_w * self.motion_sparsity_loss_weight
-
-        if self.sup_loss_weight > 0.0:
-            depth_gt = resize_img(depth_B_gt, depth_B.shape[-2:], mode='nearest')
-            losses['sup_losses'] = self.supervise_loss(depth_B, depth_gt) * scale_w * self.sup_loss_weight
-
-        if self.var_loss_weight > 0.0:
-            losses['var_loss'] = variance_loss(depth_B) * scale_w * self.var_loss_weight
-
-        return losses
+        return return_dict

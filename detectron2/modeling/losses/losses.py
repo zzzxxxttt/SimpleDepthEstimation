@@ -16,12 +16,3 @@ class silog_loss(nn.Module):
 def variance_loss(depth):
     depth_var_loss = 1 / ((depth / depth.mean() - 1.0) ** 2).mean()
     return depth_var_loss
-
-
-def sparsity_loss(motion_map):
-    abs_motion = motion_map.abs()
-    mean_abs_motion = abs_motion.mean([2, 3], keepdim=True)
-    # We used L0.5 norm here because it's more sparsity encouraging than L1.
-    # The coefficients are designed in a way that the norm asymptotes to L1 in
-    # the small value limit.
-    return (2 * mean_abs_motion * torch.sqrt(abs_motion / (mean_abs_motion + 1e-5) + 1)).mean()

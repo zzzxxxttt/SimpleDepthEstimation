@@ -72,10 +72,3 @@ def cal_smoothness_loss(depth, image):
     smoothness_y = inv_depth_gradients_y * weights_y
 
     return smoothness_x.abs().mean() + smoothness_y.abs().mean()
-
-
-def cal_motion_smoothness_loss(motion_field, warp_around=False):
-    motion_gradients_x = gradient_x(motion_field)[:, :, :-1, :]
-    motion_gradients_y = gradient_y(motion_field)[:, :, :, :-1]
-
-    return torch.sqrt(1e-5 + motion_gradients_x ** 2 + motion_gradients_y ** 2).mean()
