@@ -25,7 +25,7 @@ def motion_consistency_loss(coords_A_in_B, mask, R_A2B, R_B2A, t_A2B, t_B2A):
     R2t1 = R_B2A[:, None, :, :] @ t_A2B.view(B, 3, 1, -1).permute(0, 3, 1, 2)  # [B, HxW, 3, 1]
 
     rot_unit = R2R1
-    trans_zero = R2t1 + sampled_t_B2A.view(B, -1, 3, 1)
+    trans_zero = R2t1[..., 0] + sampled_t_B2A.view(B, -1, 3)
 
     eyes = torch.eye(3)[None, :, :].repeat(B, 1, 1)
 
@@ -35,12 +35,12 @@ def motion_consistency_loss(coords_A_in_B, mask, R_A2B, R_B2A, t_A2B, t_B2A):
     rot_error = (rot_error / (rot1_scale + rot2_scale + 1e-5)).mean()
 
     # Here again, we normalize by the magnitudes, for the same reason.
-    trans_error = (trans_zero ** 2).sum(1)
-    trans1_scale = (t_A2B ** 2).sum([2, 3])
-    trans2_scale = (sampled_t_B2A ** 2).sum([1, 2])
+    trans_error = (trans_zero ** 2).sum(2).view(B, H, W)
+    trans1_scale = (t_A2B ** 2).sum(1)
+    trans2_scale = (sampled_t_B2A ** 2).sum(1)
 
     trans_error = trans_error / (trans1_scale + trans2_scale + 1e-5)
-    trans_error = (mask * trans_error).mean()
+    trans_error = (mask[:, 0, :, :] * trans_error).mean()
 
     return rot_error, trans_error
 

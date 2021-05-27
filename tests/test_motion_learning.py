@@ -60,7 +60,6 @@ if __name__ == '__main__':
     cfg.MODEL.POSE_NET.GROUP_NORM = False
     cfg.MODEL.POSE_NET.MASK_MOTION = False
     cfg.MODEL.POSE_NET.LEARN_SCALE = False
-    cfg.MODEL.POSE_NET.CYCLE_CONSISTENCY = True
 
     cfg.LOSS = CN()
     cfg.LOSS.SSIM_WEIGHT = 0.5
