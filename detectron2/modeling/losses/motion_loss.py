@@ -27,7 +27,7 @@ def motion_consistency_loss(coords_A_in_B, mask, R_A2B, R_B2A, t_A2B, t_B2A):
     rot_unit = R2R1
     trans_zero = R2t1[..., 0] + sampled_t_B2A.view(B, -1, 3)
 
-    eyes = torch.eye(3)[None, :, :].repeat(B, 1, 1)
+    eyes = torch.eye(3, device=coords_A_in_B.device)[None, :, :].repeat(B, 1, 1)
 
     rot_error = ((rot_unit - eyes) ** 2).mean(dim=[1, 2])
     rot1_scale = ((R_A2B - eyes) ** 2).mean(dim=[1, 2])

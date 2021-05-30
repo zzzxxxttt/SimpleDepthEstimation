@@ -42,8 +42,6 @@ class MotionLearningModel(nn.Module):
         self.ssim = WeightedSSIM(cfg.LOSS.C1, cfg.LOSS.C2)
         self.clip_loss = cfg.LOSS.CLIP
 
-        self.use_automask = cfg.LOSS.AUTOMASK
-        self.photometric_reduce = cfg.LOSS.PHOTOMETRIC_REDUCE
         self.smooth_loss_w = cfg.LOSS.SMOOTHNESS_WEIGHT
 
         self.sup_loss_w = cfg.LOSS.SUPERVISED_WEIGHT
@@ -52,6 +50,9 @@ class MotionLearningModel(nn.Module):
         self.var_loss_w = cfg.LOSS.VAR_LOSS_WEIGHT
 
         self.motion_smooth_loss_w = cfg.LOSS.MOTION_SMOOTHNESS_WEIGHT
+        self.motion_sparsity_loss_w = cfg.LOSS.MOTION_SPARSITY_WEIGHT
+        self.rot_cycle_loss_w = cfg.LOSS.ROT_CYCLE_WEIGHT
+        self.trans_cycle_loss_w = cfg.LOSS.TRANS_CYCLE_WEIGHT
         self.motion_sparsity_loss_w = cfg.LOSS.MOTION_SPARSITY_WEIGHT
 
         self.scale_normalize = cfg.LOSS.SCALE_NORMALIZE
@@ -68,14 +69,11 @@ class MotionLearningModel(nn.Module):
     def forward(self, batch):
         batch = to_cuda(batch, self.device)
 
-        # currently only support two frames
-        frame1 = batch["image"]
-        frame2 = batch["context"][0]
-
-        frame1_gt = batch['depth_gt']
-        frame2_gt = batch['context_depth_gt'][0]
-
         if self.training:
+            # currently only support two frames
+            frame1 = batch["image"]
+            frame2 = batch["context"][0]
+
             batch['depth_net_input'] = torch.cat([(frame1 - self.pixel_mean) / self.pixel_std,
                                                   (frame2 - self.pixel_mean) / self.pixel_std], 0)
             output = self.depth_net(batch)
@@ -140,9 +138,6 @@ class MotionLearningModel(nn.Module):
                     resized_motion_1to2 = None
                     resized_motion_2to1 = None
 
-                depth1_gt = resize_img(frame1_gt, depth1[i].shape[-2:], mode='nearest')
-                depth2_gt = resize_img(frame2_gt, depth2[i].shape[-2:], mode='nearest')
-
                 output_1_to_2 = self.rgbd_consistency_loss(resized_frame1, resized_frame2,
                                                            depth1_normalized[i], depth2_normalized[i],
                                                            resized_intrinsics,
@@ -158,12 +153,13 @@ class MotionLearningModel(nn.Module):
                 losses = merge_loss(losses, output_2_to_1)
 
                 if pose_out['motion'] is not None:
-                    rot_loss, trans_loss = motion_consistency_loss(output_1_to_2['coords_A_in_B'],
-                                                                   output_1_to_2['proj_mask'],
-                                                                   R_1to2, R_2to1,
-                                                                   t_1to2, t_2to1)
-                    losses['rot_loss'] += rot_loss * scale_w
-                    losses['trans_loss'] += trans_loss * scale_w
+                    if self.rot_cycle_loss_w > 0 or self.trans_cycle_loss_w > 0:
+                        rot_loss, trans_loss = motion_consistency_loss(output_1_to_2['coords_A_in_B'],
+                                                                       output_1_to_2['proj_mask'],
+                                                                       R_1to2, R_2to1,
+                                                                       t_1to2, t_2to1)
+                        losses['rot_loss'] += rot_loss * scale_w * self.rot_cycle_loss_w
+                        losses['trans_loss'] += trans_loss * scale_w * self.trans_cycle_loss_w
 
                     m_1to2_scale = (resized_motion_1to2.norm(2, dim=[1, 2, 3], keepdim=True) * 3.0).mean()
                     m_2to1_scale = (resized_motion_2to1.norm(2, dim=[1, 2, 3], keepdim=True) * 3.0).mean()
@@ -183,6 +179,9 @@ class MotionLearningModel(nn.Module):
                             motion_sparsity_loss(m_2to1_normalized) * scale_w * self.motion_sparsity_loss_w
 
                 if self.sup_loss_w > 0.0:
+                    depth1_gt = resize_img(batch['depth_gt'], depth1[i].shape[-2:], mode='nearest')
+                    depth2_gt = resize_img(batch['context_depth_gt'][0], depth2[i].shape[-2:], mode='nearest')
+
                     losses['sup_loss'] += \
                         self.supervise_loss(depth1[i], depth1_gt) * scale_w * self.sup_loss_w
                     losses['sup_loss'] += \
@@ -191,7 +190,7 @@ class MotionLearningModel(nn.Module):
             output.update(losses)
 
         else:
-            batch['depth_net_input'] = (frame1 - self.pixel_mean) / self.pixel_std
+            batch['depth_net_input'] = (batch["image"] - self.pixel_mean) / self.pixel_std
             output = self.depth_net(batch)
             output['depth_pred'] = post_process(output['depth_pred'][0], batch)
 

@@ -57,6 +57,7 @@ def add_config(cfg):
     _C.SOLVER.POSE_LR = 1e-5
     _C.SOLVER.LR_STEPS = (10,)
     _C.SOLVER.GAMMA = 0.5
+    _C.SOLVER.CLIP_GRAD = 10.0
 
     # `True` if cropping is used for data augmentation during training
     _C.DATASETS.TRAIN.DEPTH_ROOT = ""
@@ -92,7 +93,7 @@ def add_config(cfg):
     _C.MODEL.DEPTH_NET.LEARN_SCALE = False
     _C.MODEL.DEPTH_NET.FLIP_PROB = 0.5
     _C.MODEL.DEPTH_NET.NOISE_STDDEV = 0.5
-    _C.MODEL.DEPTH_NET.RAMPUP_ITERS = 10000
+    _C.MODEL.DEPTH_NET.RAMPUP_ITERS = -1
 
     _C.MODEL.POSE_NET = CN()
     _C.MODEL.POSE_NET.NAME = ''
@@ -101,20 +102,20 @@ def add_config(cfg):
     _C.MODEL.POSE_NET.GROUP_NORM = False
     _C.MODEL.POSE_NET.MASK_MOTION = False
     _C.MODEL.POSE_NET.LEARN_SCALE = False
-    _C.MODEL.POSE_NET.CYCLE_CONSISTENCY = False
+    _C.MODEL.POSE_NET.BURN_IN_ITERS = -1
 
     _C.LOSS.SSIM_WEIGHT = 0.0
     _C.LOSS.C1 = 0.0
     _C.LOSS.C2 = 0.0
     _C.LOSS.CLIP = 0.0
-    _C.LOSS.AUTOMASK = False
     _C.LOSS.SMOOTHNESS_WEIGHT = 0.0
-    _C.LOSS.PHOTOMETRIC_REDUCE = 'mean'
     _C.LOSS.SUPERVISED_WEIGHT = 0.0
     _C.LOSS.VARIANCE_FOCUS = 0.85
     _C.LOSS.VAR_LOSS_WEIGHT = 0.0
     _C.LOSS.MOTION_SMOOTHNESS_WEIGHT = 0.0
     _C.LOSS.MOTION_SPARSITY_WEIGHT = 0.0
+    _C.LOSS.ROT_CYCLE_WEIGHT = 0.0
+    _C.LOSS.TRANS_CYCLE_WEIGHT = 0.0
     _C.LOSS.SCALE_NORMALIZE = False
 
     _C.TEST.GT_SCALE = False
@@ -138,7 +139,8 @@ def get_evaluator(cfg, output_folder=None):
 def do_test(cfg, model):
     data_loader = build_detection_test_loader(cfg)
     evaluator = get_evaluator(cfg, os.path.join(cfg.OUTPUT_DIR, "inference", cfg.DATASETS.TEST.NAME))
-    model.module.depth_net.set_stddev(0.0)
+    if cfg.MODEL.DEPTH_NET.RAMPUP_ITERS > 0:
+        model.module.depth_net.set_stddev(0.0)
     results = inference_on_dataset(model, data_loader, evaluator)
     # if comm.is_main_process():
     #   logger.info("Evaluation results for {} in csv format:".format(dataset_name))
@@ -154,7 +156,7 @@ def do_train(cfg, model, resume=False):
     optimizer = torch.optim.Adam([{'name': 'Depth',
                                    'params': model.module.depth_net.parameters(),
                                    'lr': cfg.SOLVER.DEPTH_LR,
-                                   'weight_decay': 0.0},
+                                   'weight_decay': 0.01},
                                   {'name': 'Pose',
                                    'params': model.module.pose_net.parameters(),
                                    'lr': cfg.SOLVER.POSE_LR,
@@ -190,12 +192,14 @@ def do_train(cfg, model, resume=False):
                 storage.epoch_iter = epoch_iter
                 storage.max_epoch_iter = len(data_loader)
 
-                noise_stddev = cfg.MODEL.DEPTH_NET.NOISE_STDDEV * \
-                               (min(global_step / float(cfg.MODEL.DEPTH_NET.RAMPUP_ITERS), 1.0)) ** 2
-                model.module.depth_net.set_stddev(noise_stddev)
+                if cfg.MODEL.DEPTH_NET.RAMPUP_ITERS > 0:
+                    noise_stddev = cfg.MODEL.DEPTH_NET.NOISE_STDDEV * \
+                                   (min(global_step / float(cfg.MODEL.DEPTH_NET.RAMPUP_ITERS), 1.0)) ** 2
+                    model.module.depth_net.set_stddev(noise_stddev)
 
-                motion_weight = np.clip(2 * global_step / cfg.MODEL.POSE_NET.BURN_IN_ITERS - 1, 0.0, 1.0)
-                model.module.pose_net.motion_weight = motion_weight
+                if cfg.MODEL.POSE_NET.BURN_IN_ITERS > 0:
+                    motion_weight = np.clip(2 * global_step / cfg.MODEL.POSE_NET.BURN_IN_ITERS - 1, 0.0, 1.0)
+                    model.module.pose_net.motion_weight = motion_weight
 
                 output = model(data)
 
@@ -210,7 +214,7 @@ def do_train(cfg, model, resume=False):
 
                 optimizer.zero_grad()
                 losses.backward()
-                nn.utils.clip_grad_norm_(model.parameters(), 10.0)
+                nn.utils.clip_grad_norm_(model.parameters(), cfg.SOLVER.CLIP_GRAD)
                 optimizer.step()
                 storage.put_scalar("lr", optimizer.param_groups[0]["lr"], smoothing_hint=False)
 
@@ -224,6 +228,7 @@ def do_train(cfg, model, resume=False):
                 eval_results = do_test(cfg, model)
                 for tag in eval_results:
                     storage.put_scalars(**{f"{tag}/k": v for k, v in eval_results[tag].items()})
+
                 # Compared to "train_net.py", the test results are not dumped to EventStorage
                 comm.synchronize()
 
@@ -250,7 +255,7 @@ def main(args):
     cfg = setup(args)
 
     model = build_model(cfg)
-    # logger.info("Model:\n{}".format(model))
+    # logger.info("Model:\n{}".format(model)) # note: uncomment this to see the model structure
     if args.eval_only:
         DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
             cfg.MODEL.WEIGHTS, resume=args.resume
