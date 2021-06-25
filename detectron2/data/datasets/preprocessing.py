@@ -1,8 +1,25 @@
+import os
 import cv2
 import random
 import numpy as np
 import torchvision.transforms as transforms
+
 from PIL import Image
+from collections import namedtuple
+
+# Per dataformat.txt
+OxtsPacket = namedtuple('OxtsPacket',
+                        'lat, lon, alt, ' +
+                        'roll, pitch, yaw, ' +
+                        'vn, ve, vf, vl, vu, ' +
+                        'ax, ay, az, af, al, au, ' +
+                        'wx, wy, wz, wf, wl, wu, ' +
+                        'pos_accuracy, vel_accuracy, ' +
+                        'navstat, numsats, ' +
+                        'posmode, velmode, orimode')
+
+# Bundle into an easy-to-access structure
+OxtsData = namedtuple('OxtsData', 'packet, T_w_imu')
 
 
 def resize_depth_np(depth, dst_size):

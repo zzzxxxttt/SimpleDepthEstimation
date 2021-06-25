@@ -8,8 +8,9 @@ import torch.utils.data.distributed
 from torchvision import transforms
 
 from detectron2.data.build import DATASET_REGISTRY, DatasetBase
-from .preprocessing import read_img, read_npz_depth, read_png_depth, read_kitti_calib_file, read_bin
-from .preprocessing import resize, random_crop, random_image_augment_v2, kb_crop, flip
+from .preprocessing import read_img, read_npz_depth, read_png_depth, read_kitti_calib_file, read_bin, \
+    resize, random_crop, random_image_augment_v2, kb_crop, flip
+from detectron2.geometry.pose_utils import pose_from_oxts_packet_np, T_from_R_t_np
 
 logger = logging.getLogger(__name__)
 
@@ -105,17 +106,26 @@ class KittiDepthTrain_v2(DatasetBase):
         if date in self.calib_cache:
             cam_calib = self.calib_cache[date]['cam_calib']
             lidar_calib = self.calib_cache[date]['lidar_calib']
+            imu_calib = self.calib_cache[date]['imu_calib']
         else:
             cam_calib = read_kitti_calib_file(os.path.join(self.data_root, date, 'calib_cam_to_cam.txt'))
             lidar_calib = read_kitti_calib_file(os.path.join(self.data_root, date, 'calib_velo_to_cam.txt'))
+            imu_calib = read_kitti_calib_file(os.path.join(self.data_root, date, 'calib_imu_to_velo.txt'))
             self.calib_cache[date] = {'cam_calib': cam_calib,
-                                      'lidar_calib': lidar_calib}
+                                      'lidar_calib': lidar_calib,
+                                      'imu_calib': imu_calib}
 
         P2 = np.eye(4, dtype=np.float32)
         P2[:3, :] = np.array(cam_calib['P_rect_02']).reshape([3, 4])
         R0 = np.eye(4, dtype=np.float32)
         R0[:3, :3] = np.array(cam_calib['R_rect_00']).reshape([3, 3])
         data['intrinsics'] = P2[:3, :3]
+
+        if self.with_pose:
+            velo2cam = T_from_R_t_np(lidar_calib['R'], lidar_calib['T'])
+            imu2velo = T_from_R_t_np(imu_calib['R'], imu_calib['T'])
+            imu2cam = R0 @ velo2cam @ imu2velo
+            data['pose_gt'] = self._get_pose(date, drive, img_id, imu2cam)
 
         if self.depth_type == 'velodyne':
             data['depth_gt'] = read_npz_depth(self._get_npz_depth_dir(date, drive, img_id))
@@ -147,6 +157,10 @@ class KittiDepthTrain_v2(DatasetBase):
                         [read_png_depth(self._get_refined_png_depth_dir(*self.metadatas[ctx_idx]))
                          for ctx_idx in self.context_list[idx]]
 
+            if self.with_pose:
+                data['context_pose_gt'] = \
+                    [self._get_pose(*self.metadatas[ctx_idx], imu2cam) for ctx_idx in self.context_list[idx]]
+
         # data['lidar'] = read_bin(self._get_lidar_dir(date, drive, img_id))
 
         if self.kb_crop:
@@ -172,6 +186,7 @@ class KittiDepthTrain_v2(DatasetBase):
 
         data['image'] = self.to_tensor(data['image'])
         data['image_orig'] = self.to_tensor(data['image_orig'])
+        data['intrinsics'] = torch.from_numpy(data['intrinsics'])
         if 'context' in data:
             data['context'] = [self.to_tensor(img) for img in data['context']]
             data['context_orig'] = [self.to_tensor(img) for img in data['context_orig']]
@@ -179,6 +194,10 @@ class KittiDepthTrain_v2(DatasetBase):
             data['depth_gt'] = torch.from_numpy(data['depth_gt'])[None, :, :]
         if 'context_depth_gt' in data:
             data['context_depth_gt'] = [torch.from_numpy(d)[None, :, :] for d in data['context_depth_gt']]
+        if 'pose_gt' in data:
+            data['pose_gt'] = torch.from_numpy(data['pose_gt'])
+        if 'context_pose_gt' in data:
+            data['context_pose_gt'] = [torch.from_numpy(p) for p in data['context_pose_gt']]
 
         return data
 
@@ -199,8 +218,30 @@ class KittiDepthTrain_v2(DatasetBase):
                             'proj_depth', 'groundtruth', 'image_02', f'{img_id}.png')
 
     def _get_lidar_dir(self, date, drive, img_id):
-        return os.path.join(self.depth_root, f'{date}_drive_{drive}_sync',
+        return os.path.join(self.data_root, date, f'{date}_drive_{drive}_sync',
                             'velodyne_points', 'data', f'{img_id}.bin')
+
+    def _get_oxts_dir(self, date, drive, img_id):
+        return os.path.join(self.data_root, date, f'{date}_drive_{drive}_sync',
+                            'oxts', 'data', f'{img_id}.txt')
+
+    def _get_pose(self, date, drive, img_id, imu2cam):
+        """Gets the pose information from an image file."""
+        # Get origin data
+        origin_oxts_data = np.loadtxt(self._get_oxts_dir(date, drive, '0000000000'), delimiter=' ', skiprows=0)
+        lat = origin_oxts_data[0]
+        scale = np.cos(lat * np.pi / 180.)
+        # Get origin pose
+        origin_R, origin_t = pose_from_oxts_packet_np(origin_oxts_data, scale)
+        origin_pose = T_from_R_t_np(origin_R, origin_t)
+        # Compute current pose
+        oxts_data = np.loadtxt(self._get_oxts_dir(date, drive, img_id), delimiter=' ', skiprows=0)
+        R, t = pose_from_oxts_packet_np(oxts_data, scale)
+        pose = T_from_R_t_np(R, t)
+        # Compute odometry pose
+        odo_pose = (imu2cam @ np.linalg.inv(origin_pose) @
+                    pose @ np.linalg.inv(imu2cam)).astype(np.float32)
+        return odo_pose
 
 
 @DATASET_REGISTRY.register()

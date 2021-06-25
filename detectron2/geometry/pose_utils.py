@@ -81,7 +81,7 @@ def pose_from_oxts_packet_np(raw_data, scale):
     return R, t
 
 
-def transform_from_rot_trans_np(R, t):
+def T_from_R_t_np(R, t):
     R = R.reshape(3, 3)
     t = t.reshape(3, 1)
     return np.vstack((np.hstack([R, t]), [0, 0, 0, 1]))

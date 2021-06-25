@@ -8,7 +8,7 @@ def motion_consistency_loss(coords_A_in_B, mask, R_A2B, R_B2A, t_A2B, t_B2A):
     B, _, H, W = t_A2B.shape
 
     # sample translation map given the projected reference points
-    sampled_t_B2A = F.grid_sample(t_B2A, coords_A_in_B,
+    sampled_t_B2A = F.grid_sample(t_B2A, coords_A_in_B.detach(),
                                   mode='bilinear', padding_mode='zeros', align_corners=True)
 
     # Building a 4D transform matrix from each rotation and translation, and
@@ -54,7 +54,7 @@ def motion_smoothness_loss(motion_field, warp_around=False):
 
 def motion_sparsity_loss(motion_map):
     abs_motion = motion_map.abs()
-    mean_abs_motion = abs_motion.mean([2, 3], keepdim=True)
+    mean_abs_motion = abs_motion.mean([2, 3], keepdim=True).detach()
     # We used L0.5 norm here because it's more sparsity encouraging than L1.
     # The coefficients are designed in a way that the norm asymptotes to L1 in
     # the small value limit.

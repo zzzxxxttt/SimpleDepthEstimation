@@ -25,6 +25,8 @@ import math
 from collections import OrderedDict
 import numpy as np
 
+# os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE" # todo
+
 import torch
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel
