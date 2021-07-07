@@ -103,6 +103,9 @@ class KittiDepthTrain_v2(DatasetBase):
                 'top_margin': 0,
                 'left_margin': 0}
 
+        data['img_w'] = data['image'].shape[1]
+        data['img_h'] = data['image'].shape[0]
+
         if date in self.calib_cache:
             cam_calib = self.calib_cache[date]['cam_calib']
             lidar_calib = self.calib_cache[date]['lidar_calib']

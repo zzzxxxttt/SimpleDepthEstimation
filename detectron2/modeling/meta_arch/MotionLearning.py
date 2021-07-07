@@ -12,7 +12,7 @@ from ...geometry.pose_utils import pose_vec2mat
 from ...geometry.camera import resize_img, scale_intrinsics, resize_img_avgpool, view_synthesis
 from ..losses.smoothness_loss import cal_smoothness_loss
 from ..losses.motion_loss import motion_consistency_loss, motion_smoothness_loss, motion_sparsity_loss
-from ..losses.ssim_loss import WeightedSSIM
+from ..losses.ssim_loss import WeightedSSIM, SSIM
 from ..losses.losses import silog_loss, variance_loss
 from .SupDepth import post_process
 
@@ -39,7 +39,8 @@ class MotionLearningModel(nn.Module):
         self.pose_net = build_pose_net(cfg)
 
         self.ssim_loss_weight = cfg.LOSS.SSIM_WEIGHT
-        self.ssim = WeightedSSIM(cfg.LOSS.C1, cfg.LOSS.C2)
+        # self.ssim = WeightedSSIM(cfg.LOSS.C1, cfg.LOSS.C2)
+        self.ssim = SSIM(cfg.LOSS.C1, cfg.LOSS.C2)  # todo
         self.clip_loss = cfg.LOSS.CLIP
 
         self.smooth_loss_w = cfg.LOSS.SMOOTHNESS_WEIGHT
@@ -90,13 +91,21 @@ class MotionLearningModel(nn.Module):
                                                  torch.cat([pose_net_input_2, pose_net_input_1], 0)
 
             # pose: [2B, 6] motion: [2B, 3, H, W]
-            pose_out = self.pose_net(pose_net_input_1, pose_net_input_2)
+            pose_out = self.pose_net(torch.cat([pose_net_input_1, pose_net_input_2], 0))
             poses = pose_vec2mat(pose_out['pose'])  # [2B, 4, 4]
 
             pose_1to2, pose_2to1 = torch.chunk(poses, 2, dim=0)
             motion_1to2, motion_2to1 = None, None
-            if pose_out['motion'] is not None:
+            if 'motion' in pose_out:
                 motion_1to2, motion_2to1 = torch.chunk(pose_out['motion'], 2, dim=0)
+
+            import numpy as np
+            pose1_invs = torch.from_numpy(np.stack([np.linalg.inv(p.cpu().numpy())
+                                                    for p in batch['pose_gt']], 0)).to(self.device)
+            pose2_invs = torch.from_numpy(np.stack([np.linalg.inv(p.cpu().numpy())
+                                                    for p in batch['context_pose_gt'][0]], 0)).to(self.device)
+            pose_1to2 = batch['pose_gt'] @ pose2_invs
+            pose_2to1 = batch['context_pose_gt'][0] @ pose1_invs
 
             # todo
             # import numpy as np
@@ -136,7 +145,7 @@ class MotionLearningModel(nn.Module):
                 depth2_normalized = [d / depth_mean for d in depth2]
                 pose_1to2[:, :3, 3] /= depth_mean
                 pose_2to1[:, :3, 3] /= depth_mean
-                if pose_out['motion'] is not None:
+                if 'motion' in pose_out:
                     motion_1to2 /= depth_mean
                     motion_2to1 /= depth_mean
             else:
@@ -161,7 +170,7 @@ class MotionLearningModel(nn.Module):
                 t_1to2 = pose_1to2[:, :3, [3], None]
                 t_2to1 = pose_2to1[:, :3, [3], None]
 
-                if pose_out['motion'] is not None:
+                if 'motion' in pose_out:
                     resized_motion_1to2 = resize_img_avgpool(motion_1to2, depth1[i].shape[-2:])
                     resized_motion_2to1 = resize_img_avgpool(motion_2to1, depth2[i].shape[-2:])
                     t_1to2 = t_1to2 + resized_motion_1to2
@@ -184,7 +193,7 @@ class MotionLearningModel(nn.Module):
 
                 losses = merge_loss(losses, output_2_to_1, scale_w)
 
-                if pose_out['motion'] is not None:
+                if 'motion' in pose_out:
                     if self.rot_cycle_loss_w > 0 or self.trans_cycle_loss_w > 0:
                         rot_loss, trans_loss = motion_consistency_loss(output_1_to_2['coords_A_in_B'],
                                                                        output_1_to_2['proj_mask'],
@@ -263,27 +272,29 @@ class MotionLearningModel(nn.Module):
 
         sampled_frame_B, sampled_depth_B = torch.split(sampled_values, [3, 1], dim=1)
 
-        mask = (depth_in_B < sampled_depth_B).float() * proj_mask.float()
-        # mask=(depth_A>0).float()*(sampled_depth_B>0).float()# todo
+        # mask = (depth_in_B < sampled_depth_B).float() * proj_mask.float()
+        mask = proj_mask.float()  # todo
+        # mask=(depth_A>0).float()*(sampled_depth_B>0).float()
         # plt.imshow(depth_in_B[0, 0].detach().cpu().numpy(), cmap='gray')
         # plt.show()
         # plt.imshow(sampled_depth_B[0, 0].detach().cpu().numpy(), cmap='gray')
         # plt.show()
 
-        return_dict['depth_l1_loss'] = (torch.abs(sampled_depth_B.detach() - depth_in_B) * mask).mean()
+        # return_dict['depth_l1_loss'] = (torch.abs(sampled_depth_B.detach() - depth_in_B) * mask).mean()
 
-        return_dict['rgb_l1_loss'] = (torch.abs(sampled_frame_B - frame_A).mean(1, True) * mask).mean()
+        return_dict['rgb_l1_loss'] = (torch.abs(sampled_frame_B - frame_A) * mask).mean()
 
         # SSIM loss
         if self.ssim_loss_weight > 0.0:
-            depth_error = (depth_in_B - sampled_depth_B) ** 2
-            depth_err_2nd_mom = ((depth_error * mask).sum([1, 2, 3]) / (mask.sum([1, 2, 3]) + 1.0)) + 1e-4
-            depth_proximity_weight = \
-                (depth_err_2nd_mom.view(-1, 1, 1, 1) / (depth_error + depth_err_2nd_mom.view(-1, 1, 1, 1)))
-            depth_proximity_weight = (depth_proximity_weight * proj_mask.float()).detach()
-
-            rgb_ssim_loss, avg_weight = self.ssim(sampled_frame_B, frame_A, depth_proximity_weight)
-            rgb_ssim_loss = rgb_ssim_loss * avg_weight
+            # depth_error = (depth_in_B - sampled_depth_B) ** 2
+            # depth_err_2nd_mom = ((depth_error * mask).sum([1, 2, 3]) / (mask.sum([1, 2, 3]) + 1.0)) + 1e-4
+            # depth_proximity_weight = \
+            #     (depth_err_2nd_mom.view(-1, 1, 1, 1) / (depth_error + depth_err_2nd_mom.view(-1, 1, 1, 1)))
+            # depth_proximity_weight = (depth_proximity_weight * proj_mask.float()).detach()
+            #
+            # rgb_ssim_loss, avg_weight = self.ssim(sampled_frame_B, frame_A, depth_proximity_weight)
+            # rgb_ssim_loss = rgb_ssim_loss * avg_weight
+            rgb_ssim_loss = self.ssim(sampled_frame_B, frame_A) * mask
             # Weighted Sum: alpha * ssim + (1 - alpha) * l1
             return_dict['ssim_loss'] = rgb_ssim_loss.mean() * self.ssim_loss_weight
             return_dict['rgb_l1_loss'] *= (1 - self.ssim_loss_weight)

@@ -1,0 +1,75 @@
+_BASE_: "../Base-MotionLearning.yaml"
+
+MODEL:
+  META_ARCHITECTURE: "MotionLearningModel"
+  MAX_DEPTH: 80
+  DEPTH_NET:
+    NAME: "DepthResNet"
+    ENCODER_NAME: "18pt"
+    #    NAME: "BtsModel"
+    #    ENCODER_NAME: "resnet50_bts"
+    #    BTS_SIZE: 512
+    UPSAMPLE_DEPTH: False
+    LEARN_SCALE: False
+    FLIP_PROB: 0.5
+    NOISE_STDDEV: 0.5
+    RAMPUP_ITERS: -1
+  POSE_NET:
+    NAME: "GoogleMotionNet"
+    USE_DEPTH: True
+    GROUP_NORM: False
+    MASK_MOTION: True
+    LEARN_SCALE: False
+    BURN_IN_ITERS: 20000
+LOSS:
+  SSIM_WEIGHT: 0.85
+  C1: 0.0001
+  C2: 0.0009
+  CLIP: 0.0
+  SMOOTHNESS_WEIGHT: 0.001
+  SUPERVISED_WEIGHT: 0.0
+  VARIANCE_FOCUS: 0.85
+  VAR_LOSS_WEIGHT: 0.0001
+  MOTION_SMOOTHNESS_WEIGHT: 0.0
+  MOTION_SPARSITY_WEIGHT: 0.0
+  ROT_CYCLE_WEIGHT: 0.0
+  TRANS_CYCLE_WEIGHT: 0.0
+  SCALE_NORMALIZE: False
+DATASETS:
+  TRAIN:
+    NAME: "KittiDepthTrain_v2"
+    DATA_ROOT: "E:/kitti_d3"
+    DEPTH_ROOT: "E:/KITTI_raw_groundtruth_d3"
+    SPLIT: "E:/splits/eigen_train_files_d3.txt"
+    IMG_WIDTH: 320
+    IMG_HEIGHT: 96
+    KB_CROP: False
+    RESIZE: True
+    DEPTH_TYPE: "none"
+    FORWARD_CONTEXT: 0
+    BACKWARD_CONTEXT: 1
+    STRIDE: 1
+    WITH_POSE: True
+    WITH_CONTEXT_DEPTH: True
+  TEST:
+    NAME: "KittiDepthVal_v2"
+    DATA_ROOT: "E:/kitti_d3"
+    DEPTH_ROOT: "E:/KITTI_raw_groundtruth_d3"
+    SPLIT: "E:/splits/eigen_val_files.txt"
+    IMG_WIDTH: 320
+    IMG_HEIGHT: 96
+    KB_CROP: False
+    RESIZE: True
+    DEPTH_TYPE: "groundtruth"
+    FORWARD_CONTEXT: 0
+    BACKWARD_CONTEXT: 0
+    STRIDE: 0
+    WITH_POSE: True
+    WITH_CONTEXT_DEPTH: False
+DATALOADER:
+  NUM_WORKERS: 0
+SOLVER:
+  IMS_PER_BATCH: 2
+  MAX_EPOCHS: 10
+  LR_STEPS: (5,8)
+LOG_PERIOD: 10

@@ -90,7 +90,7 @@ class DepthDecoder(nn.Module):
             self.convs[("dispconv", s)] = Conv3x3(self.num_ch_dec[s], self.num_output_channels)
 
         self.decoder = nn.ModuleList(list(self.convs.values()))
-        self.sigmoid = nn.Sigmoid()
+        self.softplus = nn.Softplus()
 
     def forward(self, input_features):
         self.outputs = {}
@@ -105,6 +105,6 @@ class DepthDecoder(nn.Module):
             x = torch.cat(x, 1)
             x = self.convs[("upconv", i, 1)](x)
             if i in self.scales:
-                self.outputs[("disp", i)] = self.sigmoid(self.convs[("dispconv", i)](x))
+                self.outputs[("disp", i)] = self.softplus(self.convs[("dispconv", i)](x))
 
         return self.outputs

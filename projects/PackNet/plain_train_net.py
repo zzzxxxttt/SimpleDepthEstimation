@@ -88,6 +88,11 @@ def add_config(cfg):
     _C.MODEL.POSE_NET = CN()
     _C.MODEL.POSE_NET.NAME = ''
     _C.MODEL.POSE_NET.NUM_CONTEXTS = 0
+    _C.MODEL.POSE_NET.USE_DEPTH = False
+    _C.MODEL.POSE_NET.GROUP_NORM = False
+    _C.MODEL.POSE_NET.MASK_MOTION = False
+    _C.MODEL.POSE_NET.LEARN_SCALE = False
+    _C.MODEL.POSE_NET.BURN_IN_ITERS = -1
 
     _C.LOSS.SSIM_WEIGHT = 0.0
     _C.LOSS.C1 = 0.0
@@ -98,6 +103,7 @@ def add_config(cfg):
     _C.LOSS.PHOTOMETRIC_REDUCE = 'min'
     _C.LOSS.SUPERVISED_WEIGHT = 0.0
     _C.LOSS.VARIANCE_FOCUS = 0.85
+    _C.LOSS.VAR_LOSS_WEIGHT = 0.0
 
     _C.TEST.GT_SCALE = False
 

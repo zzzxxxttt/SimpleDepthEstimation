@@ -51,7 +51,7 @@ class SupDepthModel(nn.Module):
 
 
 def post_process(depth_pred, batch):
-    orig_h, orig_w = batch['depth_gt_orig'].shape[-2:]
+    orig_h, orig_w = batch['img_h'][0].item(), batch['img_w'][0].item()
 
     top_margin = int(batch['top_margin'][0])
     left_margin = int(batch['left_margin'][0])

@@ -21,11 +21,15 @@ It also includes fewer abstraction, therefore is easier to add custom logic.
 
 import logging
 import os
+
+
+os.environ["OMP_NUM_THREADS"] = '1'
+
 import math
 from collections import OrderedDict
 import numpy as np
 
-# os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE" # todo
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE" # todo
 
 import torch
 import torch.nn as nn
@@ -226,6 +230,8 @@ def do_train(cfg, model, resume=False):
 
             scheduler.step()
 
+            periodic_checkpointer.step(epoch)
+
             if cfg.TEST.EVAL_PERIOD > 0 and (epoch + 1) % cfg.TEST.EVAL_PERIOD == 0:
                 eval_results = do_test(cfg, model)
                 for tag in eval_results:
@@ -233,9 +239,6 @@ def do_train(cfg, model, resume=False):
 
                 # Compared to "train_net.py", the test results are not dumped to EventStorage
                 comm.synchronize()
-
-            periodic_checkpointer.step(epoch)
-
 
 def setup(args):
     """

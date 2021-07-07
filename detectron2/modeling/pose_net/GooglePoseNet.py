@@ -40,9 +40,8 @@ class GooglePoseNet(nn.Module):
                 if m.bias is not None:
                     m.bias.data.zero_()
 
-    def forward(self, image, context):
-        B, _, _, _ = image.shape
-        inputs = torch.cat([image, context], 1)
+    def forward(self, inputs):
+        B, _, _, _ = inputs.shape
         out_conv1 = self.conv1(inputs)
         out_conv2 = self.conv2(out_conv1)
         out_conv3 = self.conv3(out_conv2)
@@ -109,9 +108,8 @@ class GoogleMotionNet(nn.Module):
                 if m.bias is not None:
                     m.bias.data.zero_()
 
-    def forward(self, image, context):
-        B, _, _, _ = image.shape
-        inputs = torch.cat([image, context], 1)
+    def forward(self, inputs):
+        B, _, _, _ = inputs.shape
         out_conv1 = self.conv1(inputs)
         out_conv2 = self.conv2(out_conv1)
         out_conv3 = self.conv3(out_conv2)
