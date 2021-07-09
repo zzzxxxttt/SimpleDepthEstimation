@@ -70,7 +70,7 @@ class SelfSupDepthModel(nn.Module):
             poses = torch.chunk(pose_vec2mat(pose_out['pose']), len(batch['context']), dim=0)
 
             image = batch['image_orig']
-            contexts = batch['context']
+            contexts = batch['context_orig']
             intrinsics = batch['intrinsics']
             depth_pred = output['depth_pred']
 
@@ -80,7 +80,8 @@ class SelfSupDepthModel(nn.Module):
             losses = defaultdict(lambda: 0)
 
             for i in range(num_scales):
-                scale_w = 1.0 / 2 ** i
+                # scale_w = 1.0 / 2 ** i
+                scale_w = 1.0 / 2 ** (num_scales - i - 1)
 
                 resized_image = resize_img(image, dst_size=depth_pred[i].shape[-2:])
                 resized_intrinsics = scale_intrinsics(intrinsics.clone(),
@@ -134,7 +135,7 @@ class SelfSupDepthModel(nn.Module):
 
     def rgb_consistency_loss(self, frame_A, frame_B, depth_A, intrinsics, R_A2B=None, t_A2B=None):
 
-        if R_A2B is not None and t_A2B is None:
+        if R_A2B is not None and t_A2B is not None:
             sampled_frame_B, _, _, _ = view_synthesis(frame_B, depth_A, intrinsics, R_A2B, t_A2B)
         else:
             sampled_frame_B = frame_B

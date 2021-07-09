@@ -38,6 +38,7 @@ class DepthResNet(nn.Module):
 
         self.encoder = ResnetEncoder(num_layers=num_layers, pretrained=pretrained)
         self.decoder = DepthDecoder(num_ch_enc=self.encoder.num_ch_enc)
+        self.scale_inv_depth = partial(disp_to_depth, min_depth=0.1, max_depth=cfg.MODEL.MAX_DEPTH)
 
         self.flip_prob = cfg.MODEL.DEPTH_NET.FLIP_PROB
         self.upsample_depth = cfg.MODEL.DEPTH_NET.UPSAMPLE_DEPTH
@@ -55,9 +56,9 @@ class DepthResNet(nn.Module):
 
         x = self.encoder(image)
         x = self.decoder(x)
-        disps = [x[('disp', i)] for i in range(4)]
+        disps = [self.scale_inv_depth(x[('disp', i)])[1] for i in range(4)]
 
-        if flip:
+        if self.training and flip:
             disps = [torch.flip(d, [3]) for d in disps]
 
         if self.upsample_depth:

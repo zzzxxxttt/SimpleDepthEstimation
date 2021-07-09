@@ -14,6 +14,7 @@ from detectron2.data.datasets.kitti_v2 import KittiDepthTrain_v2
 from detectron2.data.build import build_detection_train_loader
 
 from detectron2.modeling.meta_arch.MotionLearning import MotionLearningModel
+from detectron2.modeling.meta_arch.SelfSupDepth import SelfSupDepthModel
 
 from detectron2.utils.logger import setup_logger
 
@@ -56,7 +57,7 @@ if __name__ == '__main__':
     cfg.MODEL.DEPTH_NET.NAME = "DepthResNet"
     cfg.MODEL.DEPTH_NET.ENCODER_NAME = "18pt"
 
-    cfg.MODEL.DEPTH_NET.UPSAMPLE_DEPTH = False
+    cfg.MODEL.DEPTH_NET.UPSAMPLE_DEPTH = True
     cfg.MODEL.DEPTH_NET.LEARN_SCALE = False
     cfg.MODEL.DEPTH_NET.FLIP_PROB = 0.0
 
@@ -64,7 +65,7 @@ if __name__ == '__main__':
     cfg.MODEL.POSE_NET.NAME = 'GooglePoseNet'
     cfg.MODEL.POSE_NET.NUM_CONTEXTS = 0
     cfg.MODEL.POSE_NET.USE_DEPTH = False
-    cfg.MODEL.POSE_NET.GROUP_NORM = False
+    cfg.MODEL.POSE_NET.GROUP_NORM = True
     cfg.MODEL.POSE_NET.MASK_MOTION = False
     cfg.MODEL.POSE_NET.LEARN_SCALE = False
 
@@ -92,10 +93,12 @@ if __name__ == '__main__':
                                              shuffle=True,
                                              collate_fn=dataset.batch_collator)
 
-    model = MotionLearningModel(cfg)
-    model = nn.DataParallel(model)
+    # model = MotionLearningModel(cfg)
+    model = SelfSupDepthModel(cfg)
+
+    # model = nn.DataParallel(model)
     model.load_state_dict(torch.load(
-        '../output/debug/model_0000000.pth', map_location='cpu')['model'])
+        '../output/sfm/model_0000009.pth', map_location='cpu')['model'])
 
     model.eval()
 
@@ -106,8 +109,8 @@ if __name__ == '__main__':
         plt.show()
 
         depth = output['depth_pred'][0, 0]
-        # normalizer = np.percentile(depth[depth > 0], 95)
-        # depth = np.clip(depth / (normalizer + 1e-5), 0, 1.0)
+        normalizer = np.percentile(depth[depth > 0], 95)
+        depth = np.clip(depth / (normalizer + 1e-5), 0, 1.0)
         plt.imshow(depth, cmap = 'plasma_r')
         plt.show()
         pass
