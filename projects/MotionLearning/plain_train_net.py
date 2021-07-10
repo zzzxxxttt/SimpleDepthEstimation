@@ -173,7 +173,7 @@ def do_train(cfg, model, resume=False):
                                                      milestones=cfg.SOLVER.LR_STEPS,
                                                      gamma=cfg.SOLVER.GAMMA)
 
-    checkpointer = DetectionCheckpointer(model, cfg.OUTPUT_DIR, optimizer=optimizer, scheduler=scheduler)
+    checkpointer = DetectionCheckpointer(model.module, cfg.OUTPUT_DIR, optimizer=optimizer, scheduler=scheduler)
     periodic_checkpointer = PeriodicCheckpointer(checkpointer, cfg.SOLVER.CHECKPOINT_PERIOD,
                                                  max_iter=cfg.SOLVER.MAX_EPOCHS)
 

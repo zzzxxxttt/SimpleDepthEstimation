@@ -125,7 +125,7 @@ def do_train(cfg, model, resume=False):
                                   lr=cfg.SOLVER.BASE_LR, eps=1e-6)
 
     checkpointer = \
-        DetectionCheckpointer(model, cfg.OUTPUT_DIR, optimizer=optimizer)
+        DetectionCheckpointer(model.module, cfg.OUTPUT_DIR, optimizer=optimizer)
     periodic_checkpointer = \
         PeriodicCheckpointer(checkpointer, cfg.SOLVER.CHECKPOINT_PERIOD, max_iter=cfg.SOLVER.MAX_EPOCHS)
 
