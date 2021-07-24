@@ -1,0 +1,2 @@
+python projects/MotionLearning/plain_train_net.py --num-gpus 1 --config-file configs/MotionLearning/debug2.yaml
+python projects/MotionLearning/plain_train_net.py --num-gpus 1 --config-file configs/MotionLearning/debug2.yaml --eval-only MODEL.WEIGHTS /path/to/checkpoint_file

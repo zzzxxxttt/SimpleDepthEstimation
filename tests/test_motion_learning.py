@@ -1,4 +1,10 @@
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"  # todo
+
+
 from tqdm import tqdm
+import numpy as np
+import matplotlib.pyplot as plt
 
 import torch
 import torch.nn as nn
@@ -54,10 +60,10 @@ if __name__ == '__main__':
     cfg.MODEL.DEPTH_NET.FLIP_PROB = 0.0
 
     cfg.MODEL.POSE_NET = CN()
-    cfg.MODEL.POSE_NET.NAME = 'GoogleMotionNet'
+    cfg.MODEL.POSE_NET.NAME = 'GooglePoseNet'
     cfg.MODEL.POSE_NET.NUM_CONTEXTS = 0
-    cfg.MODEL.POSE_NET.USE_DEPTH = True
-    cfg.MODEL.POSE_NET.GROUP_NORM = False
+    cfg.MODEL.POSE_NET.USE_DEPTH = False
+    cfg.MODEL.POSE_NET.GROUP_NORM = True
     cfg.MODEL.POSE_NET.MASK_MOTION = False
     cfg.MODEL.POSE_NET.LEARN_SCALE = False
 
@@ -75,15 +81,30 @@ if __name__ == '__main__':
     cfg.LOSS.MOTION_SMOOTHNESS_WEIGHT = 0.1
     cfg.LOSS.MOTION_SPARSITY_WEIGHT = 0.1
     cfg.LOSS.SCALE_NORMALIZE = True
+    cfg.LOSS.ROT_CYCLE_WEIGHT = 0.0
+    cfg.LOSS.TRANS_CYCLE_WEIGHT = 0.0
 
     dataset = KittiDepthTrain_v2(cfg.DATASETS.TRAIN, cfg)
     dataloader = torch.utils.data.DataLoader(dataset,
                                              num_workers=0,
                                              batch_size=2,
-                                             shuffle=False,
+                                             shuffle=True,
                                              collate_fn=dataset.batch_collator)
 
     model = MotionLearningModel(cfg)
+    model.load_state_dict(torch.load(
+        '../output/debug2/model_0000009.pth', map_location='cpu')['model'])
+    model.eval()
 
     for data in tqdm(dataloader):
         output = model(data)
+
+        plt.imshow(data['image_orig'][0].permute(1, 2, 0).cpu().numpy())
+        plt.show()
+
+        depth = output['depth_pred'][0, 0]
+        depth = np.clip(depth / 80, 0, 1.0)
+        plt.imshow(depth, cmap='plasma_r')
+        plt.show()
+        pass
+

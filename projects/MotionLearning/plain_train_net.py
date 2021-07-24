@@ -21,6 +21,9 @@ It also includes fewer abstraction, therefore is easier to add custom logic.
 
 import logging
 import os
+import sys
+
+sys.path.insert(0, '/root/data/det2')
 
 
 os.environ["OMP_NUM_THREADS"] = '1'
@@ -29,7 +32,7 @@ import math
 from collections import OrderedDict
 import numpy as np
 
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE" # todo
+# os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE" # todo
 
 import torch
 import torch.nn as nn

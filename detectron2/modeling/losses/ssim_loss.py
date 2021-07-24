@@ -75,15 +75,15 @@ class WeightedSSIM(nn.Module):
         """
         super(WeightedSSIM, self).__init__()
 
-        self.C1 = C1
-        self.C2 = C2
+        self.C1 = float(C1)
+        self.C2 = float(C2)
 
         self.pool2d = nn.AvgPool2d(kernel_size, stride=stride)
         self.pad = nn.ReflectionPad2d(1)
 
     def forward(self, x, y, w):
-        w = w + 1e-2
         avg_w = F.avg_pool2d(w, kernel_size=3, stride=1, padding=1)
+        w = w + 1e-2
         inverse_avg_w = 1.0 / (avg_w + 1e-2)
 
         mu_x = self.pool2d(self.pad(x * w)) * inverse_avg_w
