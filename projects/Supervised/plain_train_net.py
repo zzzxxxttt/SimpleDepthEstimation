@@ -19,27 +19,21 @@ Compared to "train_net.py", this script supports fewer default features.
 It also includes fewer abstraction, therefore is easier to add custom logic.
 """
 
-import logging
 import os
-import math
-from collections import OrderedDict
+import sys
+import logging
+from functools import partial
+
 import torch
-from torch.nn.parallel import DistributedDataParallel
+
 import detectron2.utils.comm as comm
 from detectron2.checkpoint import DetectionCheckpointer, PeriodicCheckpointer
-from detectron2.config import CfgNode as CN
-from detectron2.config import get_cfg
-from detectron2.data import (build_detection_test_loader,
-                             build_detection_train_loader)
+from detectron2.data import build_detection_test_loader, build_detection_train_loader
 
-from detectron2.engine import default_argument_parser, default_setup, default_writers, launch
-from detectron2.evaluation import (build_evaluator,
-                                   DatasetEvaluators,
-                                   inference_on_dataset)
-from detectron2.modeling import build_model
+from detectron2.engine import default_argument_parser, default_writers, launch
+from detectron2.evaluation import build_evaluator, DatasetEvaluators, inference_on_dataset
 from detectron2.utils.events import EventStorage
-
-from detectron2.layers.fakeDDP import FakeDDP
+from detectron2.utils.setup import simple_main
 
 logger = logging.getLogger("detectron2")
 
@@ -54,24 +48,10 @@ def add_config(cfg):
 
     # `True` if cropping is used for data augmentation during training
     _C.DATASETS.TRAIN.DEPTH_ROOT = ""
-    _C.DATASETS.TRAIN.KB_CROP = False
-    _C.DATASETS.TRAIN.RESIZE = False
     _C.DATASETS.TRAIN.DEPTH_TYPE = "none"
-    _C.DATASETS.TRAIN.FORWARD_CONTEXT = 0
-    _C.DATASETS.TRAIN.BACKWARD_CONTEXT = 0
-    _C.DATASETS.TRAIN.STRIDE = 0
-    _C.DATASETS.TRAIN.WITH_POSE = False
-    _C.DATASETS.TRAIN.WITH_CONTEXT_DEPTH = False
 
     _C.DATASETS.TEST.DEPTH_ROOT = ""
-    _C.DATASETS.TEST.KB_CROP = False
-    _C.DATASETS.TEST.RESIZE = False
     _C.DATASETS.TEST.DEPTH_TYPE = "refined"
-    _C.DATASETS.TEST.FORWARD_CONTEXT = 0
-    _C.DATASETS.TEST.BACKWARD_CONTEXT = 0
-    _C.DATASETS.TEST.STRIDE = 0
-    _C.DATASETS.TEST.WITH_POSE = False
-    _C.DATASETS.TEST.WITH_CONTEXT_DEPTH = False
 
     _C.MODEL.DATASET = "kitti"
     _C.MODEL.DEPTH_NET.ENCODER_NAME = "resnet50_bts"
@@ -178,62 +158,20 @@ def do_train(cfg, model, resume=False):
                     for writer in writers:
                         writer.write()
 
+            periodic_checkpointer.step(epoch)
+
             if cfg.TEST.EVAL_PERIOD > 0 and (epoch + 1) % cfg.TEST.EVAL_PERIOD == 0:
                 do_test(cfg, model)
                 # Compared to "train_net.py", the test results are not dumped to EventStorage
                 comm.synchronize()
 
-            periodic_checkpointer.step(epoch)
-
-
-def setup(args):
-    """
-    Create configs and perform basic setups.
-    """
-    cfg = get_cfg()
-    add_config(cfg)
-    cfg.merge_from_file(args.config_file)
-    run_name = [] if "RUN_NAME" in args.opts \
-        else ["RUN_NAME", os.path.splitext(args.config_file.split('/')[-1])[0]]
-    cfg.merge_from_list(args.opts + run_name)
-    cfg.OUTPUT_DIR = os.path.join(cfg.OUTPUT_DIR, cfg.RUN_NAME)
-    cfg.freeze()
-    default_setup(cfg, args)  # if you don't like any of the default setup, write your own setup code
-    return cfg
-
-
-def main(args):
-    cfg = setup(args)
-
-    model = build_model(cfg)
-    # logger.info("Model:\n{}".format(model))
-    if args.eval_only:
-        DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
-            cfg.MODEL.WEIGHTS, resume=args.resume
-        )
-        return do_test(cfg, model)
-
-    distributed = comm.get_world_size() > 1
-    if distributed:
-        model = DistributedDataParallel(
-            model, device_ids=[comm.get_local_rank()], broadcast_buffers=False,
-            find_unused_parameters=True
-        )
-    else:
-        model = FakeDDP(model)
-
-    do_train(cfg, model, resume=args.resume)
-    return do_test(cfg, model)
-
 
 if __name__ == "__main__":
     args = default_argument_parser().parse_args()
     print("Command Line Args:", args)
-    launch(
-        main,
-        args.num_gpus,
-        num_machines=args.num_machines,
-        machine_rank=args.machine_rank,
-        dist_url=args.dist_url,
-        args=(args,),
-    )
+    launch(partial(simple_main, add_cfg_fn=add_config, train_fn=do_train, test_fn=do_test),
+           args.num_gpus,
+           num_machines=args.num_machines,
+           machine_rank=args.machine_rank,
+           dist_url=args.dist_url,
+           args=(args,))

@@ -8,9 +8,8 @@ import torch.utils.data.distributed
 from torchvision import transforms
 
 from detectron2.data.build import DATASET_REGISTRY, DatasetBase
-from .preprocessing import read_img, read_npz_depth, read_png_depth, read_kitti_calib_file, read_bin, \
-    resize, random_crop, random_image_augment_v2, kb_crop, flip
 from detectron2.geometry.pose_utils import pose_from_oxts_packet_np, T_from_R_t_np
+from detectron2.data.preprocess.data_io import read_img, read_npz_depth, read_png_depth, read_kitti_calib_file
 
 logger = logging.getLogger(__name__)
 
@@ -18,28 +17,27 @@ logger = logging.getLogger(__name__)
 @DATASET_REGISTRY.register()
 class KittiDepthTrain_v2(DatasetBase):
     def __init__(self, dataset_cfg, cfg):
+        super(KittiDepthTrain_v2, self).__init__(dataset_cfg, cfg)
+
         self.mode = 'train'
 
         self.data_root = dataset_cfg.DATA_ROOT
         self.depth_root = dataset_cfg.DEPTH_ROOT
         self.split_file = dataset_cfg.SPLIT
 
-        self.input_w = dataset_cfg.IMG_WIDTH
-        self.input_h = dataset_cfg.IMG_HEIGHT
-
-        self.resize = dataset_cfg.RESIZE
-        self.kb_crop = dataset_cfg.KB_CROP
         self.depth_type = dataset_cfg.DEPTH_TYPE
+        self.with_depth = self.depth_type != 'none'
+        self.read_depth_fn = {'velodyne': read_npz_depth,
+                              'groundtruth': read_png_depth,
+                              'refined': read_png_depth,
+                              'none': None}[self.depth_type]
 
-        self.forward_context = dataset_cfg.FORWARD_CONTEXT
-        self.backward_context = dataset_cfg.BACKWARD_CONTEXT
-        self.stride = dataset_cfg.STRIDE
+        self.forward_context = dataset_cfg.get('FORWARD_CONTEXT', 0)
+        self.backward_context = dataset_cfg.get('BACKWARD_CONTEXT', 0)
+        self.stride = dataset_cfg.get('STRIDE', 0)
 
-        self.with_pose = dataset_cfg.WITH_POSE
-        self.with_context_depth = dataset_cfg.WITH_CONTEXT_DEPTH
-
-        self.max_depth = cfg.MODEL.MAX_DEPTH
-        self.to_tensor = transforms.ToTensor()
+        self.with_pose = dataset_cfg.get('WITH_POSE', False)
+        self.with_context_depth = dataset_cfg.get('WITH_CONTEXT_DEPTH', False)
 
         self.metadatas = []
         for line in open(self.split_file, 'r'):
@@ -50,12 +48,8 @@ class KittiDepthTrain_v2(DatasetBase):
 
             # check file exists
             if (not os.path.isfile(self._get_img_dir(date, drive, img_id))) \
-                    or (self.depth_type == 'velodyne'
-                        and not os.path.isfile(self._get_npz_depth_dir(date, drive, img_id))) \
-                    or (self.depth_type == 'groundtruth'
-                        and not os.path.isfile(self._get_png_depth_dir(date, drive, img_id))) \
-                    or (self.depth_type == 'refined'
-                        and not os.path.isfile(self._get_refined_png_depth_dir(date, drive, img_id))):
+                    or (self.depth_type != 'none'
+                        and (not os.path.isfile(self._get_depth_dir(self.depth_type, date, drive, img_id)))):
                 continue
 
             self.metadatas.append((date, drive, img_id))
@@ -93,18 +87,13 @@ class KittiDepthTrain_v2(DatasetBase):
     def __len__(self):
         return len(self.valid_inds)
 
-    def __getitem__(self, idx):
-        idx = self.valid_inds[idx]
+    def __getitem__(self, idx_):
+        idx = self.valid_inds[idx_]
 
         date, drive, img_id = self.metadatas[idx]
 
         data = {'metadata': {'date': date, 'drive': drive, 'img_id': img_id},
-                'image': read_img(self._get_img_dir(date, drive, img_id)),
-                'top_margin': 0,
-                'left_margin': 0}
-
-        data['img_w'] = data['image'].shape[1]
-        data['img_h'] = data['image'].shape[0]
+                'image': read_img(self._get_img_dir(date, drive, img_id))}
 
         if date in self.calib_cache:
             cam_calib = self.calib_cache[date]['cam_calib']
@@ -130,15 +119,10 @@ class KittiDepthTrain_v2(DatasetBase):
             imu2cam = R0 @ velo2cam @ imu2velo
             data['pose_gt'] = self._get_pose(date, drive, img_id, imu2cam)
 
-        if self.depth_type == 'velodyne':
-            data['depth_gt'] = read_npz_depth(self._get_npz_depth_dir(date, drive, img_id))
-        elif self.depth_type == 'groundtruth':
-            data['depth_gt'] = read_png_depth(self._get_png_depth_dir(date, drive, img_id))
-        elif self.depth_type == 'refined':
-            data['depth_gt'] = read_png_depth(self._get_refined_png_depth_dir(date, drive, img_id))
-
-        if self.mode == 'val' and 'depth_gt' in data:
-            data['depth_gt_orig'] = data['depth_gt'].copy()
+        if self.with_depth:
+            data['depth_gt'] = self.read_depth_fn(self._get_depth_dir(self.depth_type, date, drive, img_id))
+            if self.mode == 'val':
+                data['depth_gt_orig'] = data['depth_gt'].copy()
 
         # Add context information if requested
         if self.with_context:
@@ -147,18 +131,8 @@ class KittiDepthTrain_v2(DatasetBase):
                                for ctx_idx in self.context_list[idx]]
 
             if self.with_context_depth:
-                if self.depth_type == 'velodyne':
-                    data['context_depth_gt'] = \
-                        [read_npz_depth(self._get_npz_depth_dir(*self.metadatas[ctx_idx]))
-                         for ctx_idx in self.context_list[idx]]
-                elif self.depth_type == 'groundtruth':
-                    data['context_depth_gt'] = \
-                        [read_png_depth(self._get_png_depth_dir(*self.metadatas[ctx_idx]))
-                         for ctx_idx in self.context_list[idx]]
-                elif self.depth_type == 'refined':
-                    data['context_depth_gt'] = \
-                        [read_png_depth(self._get_refined_png_depth_dir(*self.metadatas[ctx_idx]))
-                         for ctx_idx in self.context_list[idx]]
+                data['context_depth_gt'] = [self.read_depth_fn(self._get_depth_dir(*self.metadatas[ctx_idx]))
+                                            for ctx_idx in self.context_list[idx]]
 
             if self.with_pose:
                 data['context_pose_gt'] = \
@@ -166,41 +140,8 @@ class KittiDepthTrain_v2(DatasetBase):
 
         # data['lidar'] = read_bin(self._get_lidar_dir(date, drive, img_id))
 
-        if self.kb_crop:
-            data = kb_crop(data)
-
-        if 'depth_gt' in data:
-            data['depth_gt'] = np.clip(data['depth_gt'], 0, self.max_depth)
-        if 'context_depth_gt' in data:
-            data['context_depth_gt'] = [np.clip(d, 0, self.max_depth) for d in data['context_depth_gt']]
-
-        if self.resize:
-            data = resize(data, self.input_h, self.input_w)
-        elif self.mode == 'train':
-            data = random_crop(data, self.input_h, self.input_w)
-
-        data['image_orig'] = data['image'].copy()
-        if 'context' in data:
-            data['context_orig'] = [d.copy() for d in data['context']]
-
-        if self.mode == 'train':
-            # data = random_image_augment(data)  # Random gamma, brightness, color augmentation
-            data = random_image_augment_v2(data)
-
-        data['image'] = self.to_tensor(data['image'])
-        data['image_orig'] = self.to_tensor(data['image_orig'])
-        data['intrinsics'] = torch.from_numpy(data['intrinsics'])
-        if 'context' in data:
-            data['context'] = [self.to_tensor(img) for img in data['context']]
-            data['context_orig'] = [self.to_tensor(img) for img in data['context_orig']]
-        if 'depth_gt' in data:
-            data['depth_gt'] = torch.from_numpy(data['depth_gt'])[None, :, :]
-        if 'context_depth_gt' in data:
-            data['context_depth_gt'] = [torch.from_numpy(d)[None, :, :] for d in data['context_depth_gt']]
-        if 'pose_gt' in data:
-            data['pose_gt'] = torch.from_numpy(data['pose_gt'])
-        if 'context_pose_gt' in data:
-            data['context_pose_gt'] = [torch.from_numpy(p) for p in data['context_pose_gt']]
+        for preprocess in self.preprocesses:
+            data = preprocess.forward(data)
 
         return data
 
@@ -208,17 +149,18 @@ class KittiDepthTrain_v2(DatasetBase):
         return os.path.join(self.data_root, date, f'{date}_drive_{drive}_sync',
                             'image_02', 'data', f'{img_id}.png')
 
-    def _get_npz_depth_dir(self, date, drive, img_id):
-        return os.path.join(self.depth_root, date, f'{date}_drive_{drive}_sync',
-                            'proj_depth', 'velodyne', 'image_02', f'{img_id}.npz')
-
-    def _get_png_depth_dir(self, date, drive, img_id):
-        return os.path.join(self.depth_root, date, f'{date}_drive_{drive}_sync',
-                            'proj_depth', 'groundtruth', 'image_02', f'{img_id}.png')
-
-    def _get_refined_png_depth_dir(self, date, drive, img_id):
-        return os.path.join(self.depth_root, f'{date}_drive_{drive}_sync',
-                            'proj_depth', 'groundtruth', 'image_02', f'{img_id}.png')
+    def _get_depth_dir(self, depth_type, date, drive, img_id):
+        if depth_type == 'velodyne':
+            return os.path.join(self.depth_root, date, f'{date}_drive_{drive}_sync',
+                                'proj_depth', 'velodyne', 'image_02', f'{img_id}.npz')
+        elif depth_type == 'groundtruth':
+            return os.path.join(self.depth_root, date, f'{date}_drive_{drive}_sync',
+                                'proj_depth', 'groundtruth', 'image_02', f'{img_id}.png')
+        elif depth_type == 'refined':
+            return os.path.join(self.depth_root, f'{date}_drive_{drive}_sync',
+                                'proj_depth', 'groundtruth', 'image_02', f'{img_id}.png')
+        else:
+            raise NotImplementedError
 
     def _get_lidar_dir(self, date, drive, img_id):
         return os.path.join(self.data_root, date, f'{date}_drive_{drive}_sync',
@@ -251,5 +193,4 @@ class KittiDepthTrain_v2(DatasetBase):
 class KittiDepthVal_v2(KittiDepthTrain_v2):
     def __init__(self, dataset_cfg, cfg):
         super(KittiDepthVal_v2, self).__init__(dataset_cfg, cfg)
-
         self.mode = 'val'

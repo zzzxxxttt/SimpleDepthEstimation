@@ -14,7 +14,6 @@ from ..losses.smoothness_loss import cal_smoothness_loss
 from ..losses.motion_loss import motion_consistency_loss, motion_smoothness_loss, motion_sparsity_loss
 from ..losses.ssim_loss import WeightedSSIM, SSIM
 from ..losses.losses import silog_loss, variance_loss
-from .SupDepth import post_process
 
 logger = logging.getLogger(__name__)
 
@@ -202,8 +201,7 @@ class MotionLearningModel(nn.Module):
         else:
             batch['depth_net_input'] = (batch["image"] - self.pixel_mean) / self.pixel_std
             output = self.depth_net(batch)
-            output['depth_pred'] = post_process(output['depth_pred'][0], batch)
-
+            output['depth_pred'] = output['depth_pred'][0]
         return output
 
     def rgbd_consistency_loss(self,

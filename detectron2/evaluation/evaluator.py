@@ -10,6 +10,7 @@ from torch import nn
 from detectron2.utils.comm import get_world_size, is_main_process
 from detectron2.utils.logger import log_every_n_seconds
 
+from detectron2.data.preprocess.build import build_preprocess
 from detectron2.utils.registry import Registry
 
 EVALUATOR_REGISTRY = Registry("EVALUATOR")
@@ -34,6 +35,12 @@ class DatasetEvaluator:
     This class will accumulate information of the inputs/outputs (by :meth:`process`),
     and produce evaluation results in the end (by :meth:`evaluate`).
     """
+
+    def __init__(self, cfg=None):
+        self.postprocesses = []
+        if cfg is not None:
+            for preprocess_cfg in cfg.DATASETS.TEST.get('PREPROCESS', [])[::-1]:
+                self.postprocesses.append(build_preprocess(preprocess_cfg))
 
     def reset(self):
         """
@@ -164,17 +171,12 @@ def inference_on_dataset(model, data_loader, evaluator):
             evaluator.process(inputs, outputs)
 
             iters_after_start = idx + 1 - num_warmup * int(idx >= num_warmup)
-            seconds_per_img = total_compute_time / iters_after_start
-            if idx >= num_warmup * 2 or seconds_per_img > 5:
+            sec_per_img = total_compute_time / iters_after_start
+            if idx >= num_warmup * 2 or sec_per_img > 5:
                 total_seconds_per_img = (time.perf_counter() - start_time) / iters_after_start
                 eta = datetime.timedelta(seconds=int(total_seconds_per_img * (total - idx - 1)))
                 log_every_n_seconds(
-                    logging.INFO,
-                    "Inference done {}/{}. {:.4f} s / img. ETA={}".format(
-                        idx + 1, total, seconds_per_img, str(eta)
-                    ),
-                    n=5,
-                )
+                    logging.INFO, f"Inference done {idx + 1}/{total}. {sec_per_img:.4f} s / img. ETA={str(eta)}", n=5)
 
     # Measure the time only for this worker (before the synchronization barrier)
     total_time = time.perf_counter() - start_time

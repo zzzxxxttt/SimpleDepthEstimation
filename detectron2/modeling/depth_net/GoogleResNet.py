@@ -1,6 +1,7 @@
 from collections import OrderedDict
 
 import random
+import logging
 import numpy as np
 from functools import partial
 
@@ -8,6 +9,8 @@ import torch
 import torch.nn as nn
 
 import torchvision.models as models
+from torchvision.models.resnet import model_urls
+from torchvision.models.utils import load_state_dict_from_url
 
 from .build import DEPTH_NET_REGISTRY
 
@@ -15,6 +18,8 @@ from ...layers.depth_decoder import upsample, ConvBlock, Conv3x3
 from ...geometry.camera import resize_img
 
 from ...layers.layer_norm import LayerNorm
+
+logger = logging.getLogger(__name__)
 
 
 class ResnetEncoder(nn.Module):
@@ -32,7 +37,24 @@ class ResnetEncoder(nn.Module):
         if num_layers not in resnets:
             raise ValueError("{} is not a valid number of resnet layers".format(num_layers))
 
-        self.encoder = resnets[num_layers](pretrained, norm_layer=LayerNorm)
+        self.encoder = resnets[num_layers](False, norm_layer=LayerNorm)
+
+        if pretrained:
+            pretrained_dict = load_state_dict_from_url(model_urls[f'resnet{num_layers}'], progress=True)
+            model_dict = self.encoder.state_dict()
+
+            for k in model_dict:
+                if k not in pretrained_dict:
+                    logger.info(f'missing key: {k} in pretrained model!')
+                elif model_dict[k].shape != pretrained_dict[k].shape:
+                    logger.info(f'shape mismatch: {k} '
+                                f'{model_dict[k].shape} in model vs {pretrained_dict[k].shape} in pretrained!')
+
+            for k in pretrained_dict:
+                if k not in model_dict:
+                    logger.info(f'unexpected key: {k} in pretrained model!')
+
+            self.encoder.load_state_dict(pretrained_dict, strict=False)
 
         if num_layers > 34:
             self.num_ch_enc[1:] *= 4
@@ -166,5 +188,3 @@ class GoogleResNet(nn.Module):
             disps = [resize_img(d, data['depth_net_input'].shape[-2:], mode='nearest') for d in disps]
 
         return {'depth_pred': disps}
-
-

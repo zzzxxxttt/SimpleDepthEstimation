@@ -96,6 +96,7 @@ Run on multiple machines:
         help="initialization URL for pytorch distributed backend. See "
         "https://pytorch.org/docs/stable/distributed.html for details.",
     )
+    parser.add_argument("--etag", default="", help="extra tag for the experiment")
     parser.add_argument(
         "opts",
         help="Modify config options by adding 'KEY VALUE' pairs at the end of the command. "

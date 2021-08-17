@@ -2,7 +2,7 @@ _BASE_: "../Base-SelfSupDepth.yaml"
 
 MODEL:
   META_ARCHITECTURE: "SelfSupDepthModel"
-  MAX_DEPTH: 80
+  MAX_DEPTH: &max_depth 80
   DEPTH_NET:
     NAME: "DepthResNet"
     ENCODER_NAME: "18pt"
@@ -33,35 +33,41 @@ DATASETS:
     DATA_ROOT: "E:/kitti_d3"
     DEPTH_ROOT: "E:/KITTI_raw_groundtruth_d3"
     SPLIT: "E:/splits/eigen_train_files_d3.txt"
-    IMG_WIDTH: 640
-    IMG_HEIGHT: 192
-    KB_CROP: False
-    RESIZE: True
+    WITH_POSE: False
     DEPTH_TYPE: "none"
     FORWARD_CONTEXT: 1
     BACKWARD_CONTEXT: 1
     STRIDE: 1
-    WITH_POSE: False
-    WITH_CONTEXT_DEPTH: False
+    PREPROCESS:
+      - NAME: ClipDepth
+        MAX_DEPTH: *max_depth
+      - NAME: Resize
+        IMG_W: 640
+        IMG_H: 192
+      - NAME: RandomFlip
+      - NAME: RandomImageAug
+      - NAME: ToTensor
   TEST:
     NAME: "KittiDepthVal_v2"
-    DATA_ROOT: "E:/kitti_d3"
-    DEPTH_ROOT: "E:/KITTI_raw_groundtruth_d3"
+    DATA_ROOT: "F:/A/kitti_raw"
+    DEPTH_ROOT: "F:/A/KITTI_raw_groundtruth"
     SPLIT: "E:/splits/eigen_val_files.txt"
-    IMG_WIDTH: 640
-    IMG_HEIGHT: 192
-    KB_CROP: False
-    RESIZE: True
+    WITH_POSE: False
     DEPTH_TYPE: "groundtruth"
     FORWARD_CONTEXT: 0
     BACKWARD_CONTEXT: 0
     STRIDE: 0
-    WITH_POSE: False
-    WITH_CONTEXT_DEPTH: False
+    PREPROCESS:
+      - NAME: ClipDepth
+        MAX_DEPTH: *max_depth
+      - NAME: Resize
+        IMG_W: 640
+        IMG_H: 192
+      - NAME: ToTensor
 DATALOADER:
-  NUM_WORKERS: 0
+  NUM_WORKERS: 3
 SOLVER:
-  IMS_PER_BATCH: 2
+  IMS_PER_BATCH: 6
   MAX_EPOCHS: 20
   LR_STEPS: (8,16)
 LOG_PERIOD: 1

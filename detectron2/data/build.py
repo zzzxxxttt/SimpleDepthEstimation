@@ -10,6 +10,7 @@ from detectron2.utils.env import seed_all_rng
 from detectron2.utils.comm import get_world_size
 from detectron2.utils.registry import Registry
 
+from .preprocess.build import build_preprocess
 from .samplers import InferenceSampler, TrainingSampler
 from ..utils import comm
 
@@ -32,6 +33,19 @@ This file contains the default logic to build a dataloader for training or testi
 
 
 class DatasetBase(data.Dataset):
+    def __init__(self, dataset_cfg, cfg):
+        self.preprocesses = []
+        for preprocess_cfg in dataset_cfg.get('PREPROCESS', []):
+            self.preprocesses.append(build_preprocess(preprocess_cfg))
+
+    def __getitem__(self, item):
+        raise NotImplementedError
+
+    def get_prediction(self, data_dict):
+        for preprocess in self.preprocesses[::-1]:
+            data_dict = preprocess.inverse(data_dict)
+        return data_dict
+
     def batch_collator(self, batch):
         return default_collate(batch)
 

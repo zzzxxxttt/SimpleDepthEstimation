@@ -16,7 +16,7 @@ from .build import DEPTH_NET_REGISTRY
 @DEPTH_NET_REGISTRY.register()
 class PackNet01(nn.Module):
     """
-    PackNet network with 3d convolutions (version 01, from the CVPR paper).
+    SelfSupervised network with 3d convolutions (version 01, from the CVPR paper).
 
     https://arxiv.org/abs/1905.02693
 
@@ -61,7 +61,7 @@ class PackNet01(nn.Module):
             n4o, n4i = n4 // 2, n4 // 2
             n5o, n5i = n5 // 2, n5 // 2
         else:
-            raise ValueError('Unknown PackNet version {}'.format(self.version))
+            raise ValueError('Unknown SelfSupervised version {}'.format(self.version))
 
         # Encoder
 

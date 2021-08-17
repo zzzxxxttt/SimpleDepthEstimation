@@ -46,21 +46,5 @@ class SupDepthModel(nn.Module):
             sup_losses = [self.supervise_loss(pred, gt) for pred, gt in zip(output['depth_pred'], depth_gt)]
             output['silog_loss'] = sum(sup_losses) / len(sup_losses)
         else:
-            output['depth_pred'] = self.post_process(output['depth_pred'][0], batch)
+            output['depth_pred'] = output['depth_pred'][0]
         return output
-
-
-def post_process(depth_pred, batch):
-    orig_h, orig_w = batch['img_h'][0].item(), batch['img_w'][0].item()
-
-    top_margin = int(batch['top_margin'][0])
-    left_margin = int(batch['left_margin'][0])
-    B, _, H, W = depth_pred.shape
-
-    croped_h, croped_w = orig_h - top_margin, orig_w - left_margin * 2
-    if croped_h != H or croped_w != W:
-        depth_pred = resize_img(depth_pred, (croped_h, croped_w), mode='nearest')
-
-    pred_uncropped = np.zeros((B, 1, orig_h, orig_w), dtype=np.float32)
-    pred_uncropped[:, :, top_margin:croped_h, left_margin:croped_w] = to_numpy(depth_pred)
-    return pred_uncropped

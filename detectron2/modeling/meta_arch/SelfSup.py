@@ -14,7 +14,6 @@ from ..losses.ssim_loss import SSIM
 from ...utils.memory import to_cuda
 from ...geometry.pose_utils import pose_vec2mat
 from ...geometry.camera import resize_img, scale_intrinsics, view_synthesis
-from .SupDepth import post_process
 
 logger = logging.getLogger(__name__)
 
@@ -127,10 +126,8 @@ class SelfSupDepthModel(nn.Module):
             # average over scales
             output['rec_loss'] = sum(photo_losses) / num_scales
             output.update(losses)
-
         else:
-            output['depth_pred'] = post_process(output['depth_pred'][0], batch)
-
+            output['depth_pred'] = output['depth_pred'][0]
         return output
 
     def rgb_consistency_loss(self, frame_A, frame_B, depth_A, intrinsics, R_A2B=None, t_A2B=None):

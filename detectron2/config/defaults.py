@@ -59,6 +59,7 @@ _C.DATASETS.TRAIN.SPLIT = ""
 _C.DATASETS.TRAIN.DATA_ROOT = ""
 _C.DATASETS.TRAIN.IMG_WIDTH = 768
 _C.DATASETS.TRAIN.IMG_HEIGHT = 384
+_C.DATASETS.TRAIN.PREPROCESS = []
 
 # List of the dataset names for testing. Must be registered in DatasetCatalog
 _C.DATASETS.TEST = CN()
@@ -67,6 +68,7 @@ _C.DATASETS.TEST.SPLIT = ""
 _C.DATASETS.TEST.DATA_ROOT = ""
 _C.DATASETS.TEST.IMG_WIDTH = 768
 _C.DATASETS.TEST.IMG_HEIGHT = 384
+_C.DATASETS.TEST.PREPROCESS = []
 
 # -----------------------------------------------------------------------------
 # DataLoader

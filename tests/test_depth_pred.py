@@ -14,7 +14,7 @@ from detectron2.data.datasets.kitti_v2 import KittiDepthTrain_v2
 from detectron2.data.build import build_detection_train_loader
 
 from detectron2.modeling.meta_arch.MotionLearning import MotionLearningModel
-from detectron2.modeling.meta_arch.SelfSupDepth import SelfSupDepthModel
+from detectron2.modeling.meta_arch.SelfSup import SelfSupDepthModel
 
 from detectron2.utils.logger import setup_logger
 

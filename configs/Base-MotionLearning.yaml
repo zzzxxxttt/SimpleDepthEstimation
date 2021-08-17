@@ -1,6 +1,6 @@
 MODEL:
   META_ARCHITECTURE: "MotionLearningModel"
-  MAX_DEPTH: 80
+  MAX_DEPTH: &max_depth 80
   DEPTH_NET:
     NAME: "DepthResNet"
     ENCODER_NAME: "18pt"
@@ -39,30 +39,38 @@ DATASETS:
     DATA_ROOT: "/data/data/KITTI/KITTI_raw"
     DEPTH_ROOT: "/data/data/KITTI/KITTI_raw"
     SPLIT: ""
-    IMG_WIDTH: 640
-    IMG_HEIGHT: 192
-    KB_CROP: False
-    RESIZE: True
+    PREPROCESS:
+      - NAME: ClipDepth
+        MAX_DEPTH: *max_depth
+      - NAME: Resize
+        IMG_W: 640
+        IMG_H: 192
+      - NAME: RandomFlip
+      - NAME: RandomImageAug
+      - NAME: ToTensor
+    WITH_POSE: False
     DEPTH_TYPE: "none"
     FORWARD_CONTEXT: 0
     BACKWARD_CONTEXT: 1
     STRIDE: 1
-    WITH_POSE: False
     WITH_CONTEXT_DEPTH: False
   TEST:
     NAME: "KittiDepthVal_v2"
     DATA_ROOT: "/data/data/KITTI/KITTI_raw"
     DEPTH_ROOT: "/data/data/KITTI/kitti_depth_merged"
     SPLIT: ""
-    IMG_WIDTH: 640
-    IMG_HEIGHT: 192
-    KB_CROP: False
-    RESIZE: True
+    PREPROCESS:
+      - NAME: ClipDepth
+        MAX_DEPTH: *max_depth
+      - NAME: Resize
+        IMG_W: 640
+        IMG_H: 192
+      - NAME: ToTensor
+    WITH_POSE: False
     DEPTH_TYPE: "refined"
     FORWARD_CONTEXT: 0
     BACKWARD_CONTEXT: 0
     STRIDE: 0
-    WITH_POSE: False
     WITH_CONTEXT_DEPTH: False
 SOLVER:
   IMS_PER_BATCH: 16

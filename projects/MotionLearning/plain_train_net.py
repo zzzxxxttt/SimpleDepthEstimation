@@ -19,39 +19,31 @@ Compared to "train_net.py", this script supports fewer default features.
 It also includes fewer abstraction, therefore is easier to add custom logic.
 """
 
-import logging
 import os
 import sys
+import logging
+from functools import partial
 
 sys.path.insert(0, '/root/data/det2')
 
-
 os.environ["OMP_NUM_THREADS"] = '1'
 
-import math
-from collections import OrderedDict
 import numpy as np
 
 # os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE" # todo
 
 import torch
 import torch.nn as nn
-from torch.nn.parallel import DistributedDataParallel
+
 import detectron2.utils.comm as comm
 from detectron2.checkpoint import DetectionCheckpointer, PeriodicCheckpointer
 from detectron2.config import CfgNode as CN
-from detectron2.config import get_cfg
-from detectron2.data import (build_detection_test_loader,
-                             build_detection_train_loader)
+from detectron2.data import build_detection_test_loader, build_detection_train_loader
 
 from detectron2.engine import default_argument_parser, default_setup, default_writers, launch
-from detectron2.evaluation import (build_evaluator,
-                                   DatasetEvaluators,
-                                   inference_on_dataset)
-from detectron2.modeling import build_model
+from detectron2.evaluation import build_evaluator, DatasetEvaluators, inference_on_dataset
 from detectron2.utils.events import EventStorage
-
-from detectron2.layers.fakeDDP import FakeDDP
+from detectron2.utils.setup import simple_main
 
 logger = logging.getLogger("detectron2")
 
@@ -92,7 +84,7 @@ def add_config(cfg):
     _C.MODEL.DATASET = "kitti"
     _C.MODEL.DEPTH_NET.ENCODER_NAME = "resnet50_bts"
 
-    # BTS config
+    # Supervised config
     _C.MODEL.DEPTH_NET.BTS_SIZE = 512
     _C.MODEL.DEPTH_NET.BN_NO_TRACK = False
     _C.MODEL.DEPTH_NET.FIX_1ST_CONV = False
@@ -243,54 +235,13 @@ def do_train(cfg, model, resume=False):
                 # Compared to "train_net.py", the test results are not dumped to EventStorage
                 comm.synchronize()
 
-def setup(args):
-    """
-    Create configs and perform basic setups.
-    """
-    cfg = get_cfg()
-    add_config(cfg)
-    cfg.merge_from_file(args.config_file)
-    run_name = [] if "RUN_NAME" in args.opts \
-        else ["RUN_NAME", os.path.splitext(args.config_file.split('/')[-1])[0]]
-    cfg.merge_from_list(args.opts + run_name)
-    cfg.OUTPUT_DIR = os.path.join(cfg.OUTPUT_DIR, cfg.RUN_NAME)
-    cfg.freeze()
-    default_setup(cfg, args)  # if you don't like any of the default setup, write your own setup code
-    return cfg
-
-
-def main(args):
-    cfg = setup(args)
-
-    model = build_model(cfg)
-    # logger.info("Model:\n{}".format(model)) # note: uncomment this to see the model structure
-    if args.eval_only:
-        DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
-            cfg.MODEL.WEIGHTS, resume=args.resume
-        )
-        return do_test(cfg, model)
-
-    distributed = comm.get_world_size() > 1
-    if distributed:
-        model = DistributedDataParallel(
-            model, device_ids=[comm.get_local_rank()], broadcast_buffers=False,
-            find_unused_parameters=True
-        )
-    else:
-        model = FakeDDP(model)
-
-    do_train(cfg, model, resume=args.resume)
-    return do_test(cfg, model)
-
 
 if __name__ == "__main__":
     args = default_argument_parser().parse_args()
     print("Command Line Args:", args)
-    launch(
-        main,
-        args.num_gpus,
-        num_machines=args.num_machines,
-        machine_rank=args.machine_rank,
-        dist_url=args.dist_url,
-        args=(args,),
-    )
+    launch(partial(simple_main, add_cfg_fn=add_config, train_fn=do_train, test_fn=do_test),
+           args.num_gpus,
+           num_machines=args.num_machines,
+           machine_rank=args.machine_rank,
+           dist_url=args.dist_url,
+           args=(args,))

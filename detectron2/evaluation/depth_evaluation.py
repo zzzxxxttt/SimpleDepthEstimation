@@ -7,7 +7,7 @@ import numpy as np
 from tabulate import tabulate
 
 import detectron2.utils.comm as comm
-from detectron2.utils.file_io import write_depth
+from ..data.preprocess.data_io import write_depth
 
 from .evaluator import DatasetEvaluator, EVALUATOR_REGISTRY
 from ..utils.memory import to_numpy
@@ -54,6 +54,8 @@ def compute_errors(gt, pred):
 @EVALUATOR_REGISTRY.register()
 class kitti_evaluator(DatasetEvaluator):
     def __init__(self, cfg, output_folder):
+        super(kitti_evaluator, self).__init__(cfg)
+
         self._logger = logging.getLogger(__name__)
         self._distributed = comm.get_world_size() > 1
 
@@ -72,8 +74,18 @@ class kitti_evaluator(DatasetEvaluator):
     def process(self, inputs, outputs):
         inputs, outputs = to_numpy(inputs), to_numpy(outputs)
 
-        for gt, pred in zip(inputs['depth_gt_orig'], outputs['depth_pred']):
+        metadatas = [{} for _ in outputs['depth_pred']]
+        for k in inputs['metadata']:
+            for i, v in enumerate(inputs['metadata'][k]):
+                metadatas[i][k] = v
+
+        for gt, pred, metadata in zip(inputs['depth_gt_orig'], outputs['depth_pred'], metadatas):
             gt, pred = gt.squeeze(), pred.squeeze()
+
+            data = {'depth_pred': pred, 'metadata': metadata}
+            for postprocess in self.postprocesses:
+                data = postprocess.inverse(data)
+            pred = data['depth_pred']
 
             if self.garg_crop:
                 pred, gt = garg_crop(pred, gt)
@@ -157,6 +169,8 @@ class kitti_evaluator_50_80(kitti_evaluator):
 @EVALUATOR_REGISTRY.register()
 class kitti_depth_saver(DatasetEvaluator):
     def __init__(self, cfg, output_folder):
+        super(kitti_depth_saver, self).__init__(cfg)
+
         self._logger = logging.getLogger(__name__)
         self._distributed = comm.get_world_size() > 1
 
@@ -166,9 +180,18 @@ class kitti_depth_saver(DatasetEvaluator):
     def process(self, inputs, outputs):
         inputs, outputs = to_numpy(inputs), to_numpy(outputs)
 
-        for i, pred in enumerate(outputs['depth_pred']):
-            metadata = inputs['metadata'][i]
+        metadatas = [{} for _ in outputs['depth_pred']]
+        for k in inputs['metadata']:
+            for i, v in enumerate(inputs['metadata'][k]):
+                metadatas[i][k] = v
+
+        for i, (pred, metadata) in enumerate(zip(outputs['depth_pred'], inputs['metadata'])):
             pred = pred.squeeze()
+
+            data = {'depth_pred': pred, 'metadata': metadata}
+            for postprocess in self.postprocesses:
+                data = postprocess(data)
+            pred = data['depth_pred']
 
             if self.use_gt_scale and 'depth_gt_orig' in inputs:
                 gt = inputs['depth_gt_orig']

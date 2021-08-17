@@ -11,7 +11,7 @@ from torch.utils.data.dataloader import default_collate
 from torchvision import transforms
 
 from detectron2.data.build import DATASET_REGISTRY
-from .preprocessing import resize_depth_np
+from detectron2.data.preprocess.augmentation import resize_depth
 
 
 def random_crop(img, depth, height, width):
@@ -135,7 +135,7 @@ class KittiDepthTrain(Dataset):
 
         if self.resize:
             image = cv2.resize(image, (self.input_w, self.input_h))
-            depth = resize_depth_np(depth, (self.input_h, self.input_w))
+            depth = resize_depth(depth, (self.input_h, self.input_w))
         else:
             image, depth = random_crop(image, depth, self.input_h, self.input_w)
 

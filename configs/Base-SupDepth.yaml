@@ -1,5 +1,6 @@
 MODEL:
   META_ARCHITECTURE: "SupDepthModel"
+  MAX_DEPTH: &max_depth 80
   DEPTH_NET:
     NAME: "BtsModel"
     ENCODER_NAME: "resnet50_bts"
@@ -12,29 +13,28 @@ DATASETS:
     DATA_ROOT: "/data/data/KITTI/KITTI_raw"
     DEPTH_ROOT: "/data/data/KITTI/kitti_depth_merged"
     SPLIT: ""
-    IMG_WIDTH: 640
-    IMG_HEIGHT: 192
-    KB_CROP: True
-    RESIZE: False
-    WITH_POSE: False
     DEPTH_TYPE: "refined"
-    FORWARD_CONTEXT: 0
-    BACKWARD_CONTEXT: 0
-    STRIDE: 0
+    PREPROCESS:
+      - NAME: ClipDepth
+      MAX_DEPTH: *max_depth
+      - NAME: KBCrop
+      - NAME: RandCrop
+      IMG_W: 640
+      IMG_H: 192
+      - NAME: RandomFlip
+      - NAME: RandomImageAug
+      - NAME: ToTensor
   TEST:
     NAME: "KittiDepthVal_v2"
     DATA_ROOT: "/data/data/KITTI/KITTI_raw"
     DEPTH_ROOT: "/data/data/KITTI/kitti_depth_merged"
     SPLIT: ""
-    IMG_WIDTH: 640
-    IMG_HEIGHT: 192
-    KB_CROP: True
-    RESIZE: False
-    WITH_POSE: False
     DEPTH_TYPE: "refined"
-    FORWARD_CONTEXT: 0
-    BACKWARD_CONTEXT: 0
-    STRIDE: 0
+    PREPROCESS:
+      - NAME: ClipDepth
+      MAX_DEPTH: *max_depth
+      - NAME: KBCrop
+      - NAME: ToTensor
 SOLVER:
   IMS_PER_BATCH: 16
   DEPTH_LR: 0.0001
