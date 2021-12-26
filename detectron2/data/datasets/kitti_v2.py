@@ -1,15 +1,12 @@
 import os
 import logging
 import numpy as np
+from collections import defaultdict
 
 import torch
-import torch.utils.data.distributed
-
-from torchvision import transforms
 
 from detectron2.data.build import DATASET_REGISTRY, DatasetBase
 from detectron2.geometry.pose_utils import pose_from_oxts_packet_np, T_from_R_t_np
-from detectron2.data.preprocess.data_io import read_img, read_npz_depth, read_png_depth, read_kitti_calib_file
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +24,6 @@ class KittiDepthTrain_v2(DatasetBase):
 
         self.depth_type = dataset_cfg.DEPTH_TYPE
         self.with_depth = self.depth_type != 'none'
-        self.read_depth_fn = {'velodyne': read_npz_depth,
-                              'groundtruth': read_png_depth,
-                              'refined': read_png_depth,
-                              'none': None}[self.depth_type]
 
         self.forward_context = dataset_cfg.get('FORWARD_CONTEXT', 0)
         self.backward_context = dataset_cfg.get('BACKWARD_CONTEXT', 0)
@@ -48,8 +41,8 @@ class KittiDepthTrain_v2(DatasetBase):
 
             # check file exists
             if (not os.path.isfile(self._get_img_dir(date, drive, img_id))) \
-                    or (self.depth_type != 'none'
-                        and (not os.path.isfile(self._get_depth_dir(self.depth_type, date, drive, img_id)))):
+                    or (self.depth_type != 'none' and (
+                    not os.path.isfile(self._get_depth_dir(date, drive, img_id)))):
                 continue
 
             self.metadatas.append((date, drive, img_id))
@@ -81,6 +74,8 @@ class KittiDepthTrain_v2(DatasetBase):
             self.valid_inds = list(range(len(self.metadatas)))
 
         logger.info(f'After context filtering, {len(self.valid_inds)} samples left')
+        if len(self.metadatas) == 0:
+            logger.warning('Empty dataset!')
 
         self.calib_cache = {}
 
@@ -92,17 +87,27 @@ class KittiDepthTrain_v2(DatasetBase):
 
         date, drive, img_id = self.metadatas[idx]
 
-        data = {'metadata': {'date': date, 'drive': drive, 'img_id': img_id},
-                'image': read_img(self._get_img_dir(date, drive, img_id))}
+        data = {'metadata': {'date': date,
+                             'drive': drive,
+                             'img_id': img_id,
+                             'img_dir': self._get_img_dir(date, drive, img_id),
+                             'depth_dir': self._get_depth_dir(date, drive, img_id),
+                             'lidar_dir': self._get_lidar_dir(date, drive, img_id),
+                             'ctx_img_dir': [self._get_img_dir(*self.metadatas[ctx_idx])
+                                             for ctx_idx in self.context_list[idx]],
+                             'ctx_depth_dir': [self._get_depth_dir(*self.metadatas[ctx_idx])
+                                               for ctx_idx in self.context_list[idx]],
+                             'ctx_lidar_dir': [self._get_lidar_dir(*self.metadatas[ctx_idx])
+                                               for ctx_idx in self.context_list[idx]]}}
 
         if date in self.calib_cache:
             cam_calib = self.calib_cache[date]['cam_calib']
             lidar_calib = self.calib_cache[date]['lidar_calib']
             imu_calib = self.calib_cache[date]['imu_calib']
         else:
-            cam_calib = read_kitti_calib_file(os.path.join(self.data_root, date, 'calib_cam_to_cam.txt'))
-            lidar_calib = read_kitti_calib_file(os.path.join(self.data_root, date, 'calib_velo_to_cam.txt'))
-            imu_calib = read_kitti_calib_file(os.path.join(self.data_root, date, 'calib_imu_to_velo.txt'))
+            cam_calib = self._read_calib(os.path.join(self.data_root, date, 'calib_cam_to_cam.txt'))
+            lidar_calib = self._read_calib(os.path.join(self.data_root, date, 'calib_velo_to_cam.txt'))
+            imu_calib = self._read_calib(os.path.join(self.data_root, date, 'calib_imu_to_velo.txt'))
             self.calib_cache[date] = {'cam_calib': cam_calib,
                                       'lidar_calib': lidar_calib,
                                       'imu_calib': imu_calib}
@@ -119,29 +124,7 @@ class KittiDepthTrain_v2(DatasetBase):
             imu2cam = R0 @ velo2cam @ imu2velo
             data['pose_gt'] = self._get_pose(date, drive, img_id, imu2cam)
 
-        if self.with_depth:
-            data['depth_gt'] = self.read_depth_fn(self._get_depth_dir(self.depth_type, date, drive, img_id))
-            if self.mode == 'val':
-                data['depth_gt_orig'] = data['depth_gt'].copy()
-
-        # Add context information if requested
-        if self.with_context:
-            # Add context images
-            data['context'] = [read_img(self._get_img_dir(*self.metadatas[ctx_idx]))
-                               for ctx_idx in self.context_list[idx]]
-
-            if self.with_context_depth:
-                data['context_depth_gt'] = [self.read_depth_fn(self._get_depth_dir(*self.metadatas[ctx_idx]))
-                                            for ctx_idx in self.context_list[idx]]
-
-            if self.with_pose:
-                data['context_pose_gt'] = \
-                    [self._get_pose(*self.metadatas[ctx_idx], imu2cam) for ctx_idx in self.context_list[idx]]
-
-        # data['lidar'] = read_bin(self._get_lidar_dir(date, drive, img_id))
-
-        for preprocess in self.preprocesses:
-            data = preprocess.forward(data)
+        data = self.preprocess(data)
 
         return data
 
@@ -149,14 +132,16 @@ class KittiDepthTrain_v2(DatasetBase):
         return os.path.join(self.data_root, date, f'{date}_drive_{drive}_sync',
                             'image_02', 'data', f'{img_id}.png')
 
-    def _get_depth_dir(self, depth_type, date, drive, img_id):
-        if depth_type == 'velodyne':
+    def _get_depth_dir(self, date, drive, img_id):
+        if self.depth_type == 'none':
+            return ''
+        elif self.depth_type == 'velodyne':
             return os.path.join(self.depth_root, date, f'{date}_drive_{drive}_sync',
                                 'proj_depth', 'velodyne', 'image_02', f'{img_id}.npz')
-        elif depth_type == 'groundtruth':
+        elif self.depth_type == 'groundtruth':
             return os.path.join(self.depth_root, date, f'{date}_drive_{drive}_sync',
                                 'proj_depth', 'groundtruth', 'image_02', f'{img_id}.png')
-        elif depth_type == 'refined':
+        elif self.depth_type == 'refined':
             return os.path.join(self.depth_root, f'{date}_drive_{drive}_sync',
                                 'proj_depth', 'groundtruth', 'image_02', f'{img_id}.png')
         else:
@@ -169,6 +154,20 @@ class KittiDepthTrain_v2(DatasetBase):
     def _get_oxts_dir(self, date, drive, img_id):
         return os.path.join(self.data_root, date, f'{date}_drive_{drive}_sync',
                             'oxts', 'data', f'{img_id}.txt')
+
+    def _read_calib(self, filepath):
+        data = {}
+        with open(filepath, 'r') as f:
+            for line in f.readlines():
+                key, value = line.split(':', 1)
+                # The only non-float values in these files are dates, which
+                # we don't care about anyway
+                try:
+                    data[key] = np.array([float(x) for x in value.split()], dtype=np.float32)
+                except ValueError:
+                    pass
+
+        return data
 
     def _get_pose(self, date, drive, img_id, imu2cam):
         """Gets the pose information from an image file."""
@@ -187,6 +186,33 @@ class KittiDepthTrain_v2(DatasetBase):
         odo_pose = (imu2cam @ np.linalg.inv(origin_pose) @
                     pose @ np.linalg.inv(imu2cam)).astype(np.float32)
         return odo_pose
+
+    def batch_collator(self, batch_list):
+        # convert list of dict into dict of list
+        example_merged = defaultdict(list)
+        for example in batch_list:
+            for k, v in example.items():
+                example_merged[k].append(v)
+
+        ret = {}
+        for key, value in example_merged.items():
+            if key in ['img', 'img_orig']:
+                ret[key] = torch.stack(value, 0)
+            elif key in ['intrinsics', 'pose_gt']:
+                ret[key] = torch.from_numpy(np.stack(value, 0))
+            elif key in ['depth']:
+                ret[key] = torch.from_numpy(np.stack(value, 0)[:, None, ...])
+            elif key in ['ctx_img', 'ctx_img_orig']:
+                value = np.stack([np.stack(v, 0) for v in value])
+                ret[key] = [value[:, i] for i in range(value.shape[1])]
+            elif key in ['ctx_depth']:
+                value = np.stack([np.stack(v, 0)[:, None, ...] for v in value])
+                ret[key] = [value[:, i] for i in range(value.shape[1])]
+            elif key == 'flip':
+                ret[key] = value[0]
+            else:
+                ret[key] = value
+        return ret
 
 
 @DATASET_REGISTRY.register()

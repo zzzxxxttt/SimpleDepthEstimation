@@ -159,32 +159,32 @@ class GoogleResNet(nn.Module):
                                     learn_scale=cfg.MODEL.DEPTH_NET.LEARN_SCALE)
 
         self.upsample_depth = cfg.MODEL.DEPTH_NET.UPSAMPLE_DEPTH
-        self.flip_prob = cfg.MODEL.DEPTH_NET.FLIP_PROB
 
     def set_stddev(self, stddev):
         for m in self.modules():
             if isinstance(m, LayerNorm):
                 m.stddev = stddev
 
-    def forward(self, data):
+    def forward(self, batch):
         """
         Runs the network and returns inverse depth maps
         (4 scales if training and 1 if not).
         """
-        image = data['depth_net_input']
+        image = batch['depth_net_input']
 
-        flip = random.random() < self.flip_prob
-        if self.training and flip:
+        if batch.get('flip', False):
             image = torch.flip(image, [3])
 
         x = self.encoder(image)
         x = self.decoder(x)
         disps = [x[('disp', 0)]]
 
-        if flip:
+        if batch.get('flip', False):
             disps = [torch.flip(d, [3]) for d in disps]
 
         if self.upsample_depth:
-            disps = [resize_img(d, data['depth_net_input'].shape[-2:], mode='nearest') for d in disps]
+            disps = [resize_img(d, batch['depth_net_input'].shape[-2:], mode='nearest') for d in disps]
 
-        return {'depth_pred': disps}
+        batch['depth_pred'] = disps
+
+        return batch

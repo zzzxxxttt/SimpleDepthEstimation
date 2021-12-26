@@ -1,0 +1,12 @@
+_BASE_: "./Base-SupDepth.yaml"
+
+MODEL:
+  DEPTH_NET:
+    NAME: "BtsModel"
+    ENCODER_NAME: "resnet50_bts"
+    BTS_SIZE: 512
+SOLVER:
+  IMS_PER_BATCH: 16
+DATALOADER:
+  NUM_WORKERS: 6
+LOG_PERIOD: 10

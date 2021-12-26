@@ -36,42 +36,40 @@ LOSS:
 DATASETS:
   TRAIN:
     NAME: "KittiDepthTrain_v2"
-    DATA_ROOT: "/data/data/KITTI/KITTI_raw"
-    DEPTH_ROOT: "/data/data/KITTI/KITTI_raw"
-    SPLIT: ""
+    DATA_ROOT: "/data/data/kitti/kitti_raw"
+    DEPTH_ROOT: "/data/data/kitti/KITTI_raw_groundtruth"
+    SPLIT: "/data/data/kitti/splits/eigen_train_files.txt"
+    DEPTH_TYPE: "none"
+    WITH_POSE: False
+    BACKWARD_CONTEXT: 1
+    STRIDE: 1
     PREPROCESS:
-      - NAME: ClipDepth
-        MAX_DEPTH: *max_depth
+      - NAME: LoadImg
+        WITH_CTX: true
       - NAME: Resize
         IMG_W: 640
         IMG_H: 192
       - NAME: RandomFlip
       - NAME: RandomImageAug
       - NAME: ToTensor
-    WITH_POSE: False
-    DEPTH_TYPE: "none"
-    FORWARD_CONTEXT: 0
-    BACKWARD_CONTEXT: 1
-    STRIDE: 1
-    WITH_CONTEXT_DEPTH: False
   TEST:
     NAME: "KittiDepthVal_v2"
-    DATA_ROOT: "/data/data/KITTI/KITTI_raw"
-    DEPTH_ROOT: "/data/data/KITTI/kitti_depth_merged"
-    SPLIT: ""
+    DATA_ROOT: "/data/data/kitti/kitti_raw"
+    DEPTH_ROOT: "/data/data/kitti/KITTI_raw_groundtruth"
+    SPLIT: "/data/data/kitti/splits/eigen_val_files.txt"
+    DEPTH_TYPE: "groundtruth"
+    WITH_POSE: False
     PREPROCESS:
+      - NAME: LoadImg
+      - NAME: LoadDepth
+        KEEP_ORIG: true
       - NAME: ClipDepth
         MAX_DEPTH: *max_depth
       - NAME: Resize
         IMG_W: 640
         IMG_H: 192
       - NAME: ToTensor
-    WITH_POSE: False
-    DEPTH_TYPE: "refined"
-    FORWARD_CONTEXT: 0
-    BACKWARD_CONTEXT: 0
-    STRIDE: 0
-    WITH_CONTEXT_DEPTH: False
+
 SOLVER:
   IMS_PER_BATCH: 16
   DEPTH_LR: 0.0002
@@ -89,3 +87,4 @@ EVALUATORS: (
 TEST:
   GT_SCALE: True
 VERSION: 2
+LOG_PERIOD: 20

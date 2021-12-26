@@ -20,7 +20,7 @@ class Preprocess:
     def forward(self, data_dict):
         return data_dict
 
-    def inverse(self, data_dict):
+    def backward(self, data_dict):
         return data_dict
 
 

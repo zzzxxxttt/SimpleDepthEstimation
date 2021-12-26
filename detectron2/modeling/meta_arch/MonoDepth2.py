@@ -7,19 +7,18 @@ import torch.nn as nn
 from .build import META_ARCH_REGISTRY
 from ..depth_net import build_depth_net
 from ..pose_net import build_pose_net
-from ..losses.smoothness_loss import cal_smoothness_loss
+from ..losses.smoothness_loss import smoothness_loss_fn
 from ..losses.photometric_loss import PhotometricLoss
-from ..losses.losses import silog_loss, variance_loss
+from ..losses.losses import silog_loss, variance_loss_fn
 from ..losses.ssim_loss import SSIM
 from ...utils.memory import to_cuda
-from ...geometry.pose_utils import pose_vec2mat
 from ...geometry.camera import resize_img, scale_intrinsics, view_synthesis
 
 logger = logging.getLogger(__name__)
 
 
 @META_ARCH_REGISTRY.register()
-class SelfSupDepthModel(nn.Module):
+class MonoDepth2Model(nn.Module):
     """
     Implement RetinaNet in :paper:`RetinaNet`.
     """
@@ -41,8 +40,8 @@ class SelfSupDepthModel(nn.Module):
         self.clip_loss = cfg.LOSS.CLIP
 
         self.var_loss_w = cfg.LOSS.VAR_LOSS_WEIGHT
-        self.sup_loss_weight = cfg.LOSS.SUPERVISED_WEIGHT
-        self.smooth_loss_weight = cfg.LOSS.SMOOTHNESS_WEIGHT
+        self.sup_loss_w = cfg.LOSS.SUPERVISED_WEIGHT
+        self.smooth_loss_w = cfg.LOSS.SMOOTHNESS_WEIGHT
 
         self.supervise_loss = silog_loss(cfg.LOSS.VARIANCE_FOCUS)
 
@@ -56,27 +55,25 @@ class SelfSupDepthModel(nn.Module):
     def forward(self, batch):
         batch = to_cuda(batch, self.device)
 
-        batch['depth_net_input'] = (batch["image"] - self.pixel_mean) / self.pixel_std
+        output = {}
 
-        output = self.depth_net(batch)
+        batch['depth_net_input'] = (batch["img"] - self.pixel_mean) / self.pixel_std
+
+        batch = self.depth_net(batch)
 
         if self.training:
-            pose_net_input = torch.cat([torch.cat([batch["image"], cxt], 1) for cxt in batch["context"]], 0)
+            batch['pose_net_input'] = torch.cat([batch['img']] + batch['ctx_img'], 1)
+            batch = self.pose_net(batch)  # [num_ctx * B, 4, 4]
 
-            # [3B, 6]
-            pose_out = self.pose_net(pose_net_input)
-
-            poses = torch.chunk(pose_vec2mat(pose_out['pose']), len(batch['context']), dim=0)
-
-            image = batch['image_orig']
-            contexts = batch['context_orig']
+            image = batch['img_orig']
+            contexts = batch['ctx_img_orig']
             intrinsics = batch['intrinsics']
-            depth_pred = output['depth_pred']
+            depth_pred = batch['depth_pred']
 
             num_scales = len(depth_pred)
 
-            photo_losses = [[] for _ in range(num_scales)]
             losses = defaultdict(lambda: 0)
+            photo_losses = [[] for _ in range(num_scales)]
 
             for i in range(num_scales):
                 # scale_w = 1.0 / 2 ** i
@@ -87,7 +84,7 @@ class SelfSupDepthModel(nn.Module):
                                                       x_scale=depth_pred[i].shape[-1] / image.shape[-1],
                                                       y_scale=depth_pred[i].shape[-2] / image.shape[-2])
 
-                for j, (img_target, pose) in enumerate(zip(contexts, poses)):
+                for j, (img_target, pose) in enumerate(zip(contexts, batch['pose_pred'])):
                     resized_target = resize_img(img_target, dst_size=depth_pred[i].shape[-2:])
                     photo_losses[i].append(self.rgb_consistency_loss(resized_image,
                                                                      resized_target,
@@ -103,17 +100,17 @@ class SelfSupDepthModel(nn.Module):
                                                                          resized_intrinsics,
                                                                          None, None))
 
-                if self.smooth_loss_weight > 0.0:
-                    losses['smooth_loss'] += cal_smoothness_loss(depth_pred[i], resized_image) * \
-                                             scale_w * self.smooth_loss_weight / num_scales
+                if self.smooth_loss_w > 0.0:
+                    losses['smooth_loss'] += smoothness_loss_fn(depth_pred[i], resized_image) * \
+                                             scale_w * self.smooth_loss_w / num_scales
 
-                if self.sup_loss_weight > 0.0:
-                    depth_gt = resize_img(batch['depth_gt'], depth_pred[i].shape[-2:], mode='nearest')
+                if self.sup_loss_w > 0.0:
+                    depth_gt = resize_img(batch['depth'], depth_pred[i].shape[-2:], mode='nearest')
                     losses['sup_loss'] += self.supervise_loss(depth_pred[i], depth_gt) * \
-                                          self.smooth_loss_weight / num_scales
+                                          scale_w * self.smooth_loss_w / num_scales
 
                 if self.var_loss_w > 0.0:
-                    losses['var_loss'] += variance_loss(depth_pred[i]) * scale_w * self.var_loss_w / num_scales
+                    losses['var_loss'] += variance_loss_fn(depth_pred[i]) * scale_w * self.var_loss_w / num_scales
 
             # Calculate reduced photometric loss
             if self.photometric_reduce == 'mean':
@@ -127,7 +124,7 @@ class SelfSupDepthModel(nn.Module):
             output['rec_loss'] = sum(photo_losses) / num_scales
             output.update(losses)
         else:
-            output['depth_pred'] = output['depth_pred'][0]
+            output['depth_pred'] = batch['depth_pred'][0]
         return output
 
     def rgb_consistency_loss(self, frame_A, frame_B, depth_A, intrinsics, R_A2B=None, t_A2B=None):

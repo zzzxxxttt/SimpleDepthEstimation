@@ -45,14 +45,14 @@ def motion_consistency_loss(coords_A_in_B, mask, R_A2B, R_B2A, t_A2B, t_B2A):
     return rot_error, trans_error
 
 
-def motion_smoothness_loss(motion_field, warp_around=False):
+def motion_smoothness_loss_fn(motion_field, warp_around=False):
     motion_gradients_x = gradient_x(motion_field)[:, :, :-1, :]
     motion_gradients_y = gradient_y(motion_field)[:, :, :, :-1]
 
     return torch.sqrt(1e-5 + motion_gradients_x ** 2 + motion_gradients_y ** 2).mean()
 
 
-def motion_sparsity_loss(motion_map):
+def motion_sparsity_loss_fn(motion_map):
     abs_motion = motion_map.abs()
     mean_abs_motion = abs_motion.mean([2, 3], keepdim=True).detach()
     # We used L0.5 norm here because it's more sparsity encouraging than L1.

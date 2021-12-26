@@ -40,33 +40,33 @@ class DepthResNet(nn.Module):
         self.decoder = DepthDecoder(num_ch_enc=self.encoder.num_ch_enc)
         self.scale_inv_depth = partial(disp_to_depth, min_depth=0.1, max_depth=cfg.MODEL.MAX_DEPTH)
 
-        self.flip_prob = cfg.MODEL.DEPTH_NET.FLIP_PROB
         self.upsample_depth = cfg.MODEL.DEPTH_NET.UPSAMPLE_DEPTH
 
-    def forward(self, data):
+    def forward(self, batch):
         """
         Runs the network and returns inverse depth maps
         (4 scales if training and 1 if not).
         """
-        image = data['depth_net_input']
+        image = batch['depth_net_input']
 
-        flip = random.random() < self.flip_prob
-        if self.training and flip:
+        if batch.get('flip', False):
             image = torch.flip(image, [3])
 
         x = self.encoder(image)
         x = self.decoder(x)
         disps = [self.scale_inv_depth(x[('disp', i)])[1] for i in range(4)]
 
-        if self.training and flip:
+        if batch.get('flip', False):
             disps = [torch.flip(d, [3]) for d in disps]
 
         if self.upsample_depth:
-            disps = [resize_img(d, data['depth_net_input'].shape[-2:], mode='nearest') for d in disps]
+            disps = [resize_img(d, batch['depth_net_input'].shape[-2:], mode='nearest') for d in disps]
 
-        return {'res2': disps[3],
-                'res3': disps[2],
-                'res4': disps[1],
-                'depth_pred': disps}
+        batch.update({'res2': disps[3],
+                      'res3': disps[2],
+                      'res4': disps[1],
+                      'depth_pred': disps})
+
+        return batch
 
 ########################################################################################################################

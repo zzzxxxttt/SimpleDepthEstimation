@@ -24,10 +24,13 @@ import sys
 import logging
 from functools import partial
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
+
 import torch
 
 import detectron2.utils.comm as comm
 from detectron2.checkpoint import DetectionCheckpointer, PeriodicCheckpointer
+from detectron2.config import CfgNode as CN
 from detectron2.data import build_detection_test_loader, build_detection_train_loader
 
 from detectron2.engine import default_argument_parser, default_writers, launch
@@ -36,35 +39,6 @@ from detectron2.utils.events import EventStorage
 from detectron2.utils.setup import simple_main
 
 logger = logging.getLogger("detectron2")
-
-
-def add_config(cfg):
-    """
-    Add config for tridentnet.
-    """
-    _C = cfg
-
-    _C.SOLVER.END_LR = 1e-5
-
-    # `True` if cropping is used for data augmentation during training
-    _C.DATASETS.TRAIN.DEPTH_ROOT = ""
-    _C.DATASETS.TRAIN.DEPTH_TYPE = "none"
-
-    _C.DATASETS.TEST.DEPTH_ROOT = ""
-    _C.DATASETS.TEST.DEPTH_TYPE = "refined"
-
-    _C.MODEL.DATASET = "kitti"
-    _C.MODEL.DEPTH_NET.ENCODER_NAME = "resnet50_bts"
-    _C.MODEL.DEPTH_NET.BTS_SIZE = 512
-    _C.MODEL.DEPTH_NET.UPSAMPLE_DEPTH = False
-    _C.MODEL.DEPTH_NET.BN_NO_TRACK = False
-    _C.MODEL.DEPTH_NET.FIX_1ST_CONV = False
-    _C.MODEL.DEPTH_NET.FIX_1ST_CONVS = False
-    _C.MODEL.DEPTH_NET.FLIP_PROB = 0.5
-
-    _C.LOSS.VARIANCE_FOCUS = 0.85
-
-    _C.TEST.GT_SCALE = False
 
 
 def get_evaluator(cfg, output_folder=None):
@@ -82,8 +56,9 @@ def get_evaluator(cfg, output_folder=None):
     return DatasetEvaluators(evaluator_list)
 
 
-def do_test(cfg, model):
-    data_loader = build_detection_test_loader(cfg)
+def do_test(cfg, model, data_loader=None):
+    if data_loader is None:
+        data_loader = build_detection_test_loader(cfg)
     evaluator = get_evaluator(cfg, os.path.join(cfg.OUTPUT_DIR, "inference", cfg.DATASETS.TEST.NAME))
     results = inference_on_dataset(model, data_loader, evaluator)
     # if comm.is_main_process():
@@ -96,25 +71,31 @@ def do_train(cfg, model, resume=False):
     model.train()
 
     data_loader = build_detection_train_loader(cfg)
+    test_data_loader = build_detection_test_loader(cfg)
 
+    optimizer = torch.optim.Adam([{'name': 'Depth',
+                                   'params': model.module.depth_net.parameters(),
+                                   'lr': cfg.SOLVER.DEPTH_LR,
+                                   'weight_decay': 0.0},
+                                  {'name': 'Pose',
+                                   'params': model.module.pose_net.parameters(),
+                                   'lr': cfg.SOLVER.POSE_LR,
+                                   'weight_decay': 0.0}])
     # Training parameters
-    optimizer = torch.optim.AdamW([{'params': model.module.depth_net.encoder.parameters(),
-                                    'weight_decay': 1e-2},
-                                   {'params': model.module.depth_net.decoder.parameters(),
-                                    'weight_decay': 0}],
-                                  lr=cfg.SOLVER.BASE_LR, eps=1e-6)
 
-    checkpointer = \
-        DetectionCheckpointer(model.module, cfg.OUTPUT_DIR, optimizer=optimizer)
-    periodic_checkpointer = \
-        PeriodicCheckpointer(checkpointer, cfg.SOLVER.CHECKPOINT_PERIOD, max_iter=cfg.SOLVER.MAX_EPOCHS)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
+                                                     milestones=cfg.SOLVER.LR_STEPS,
+                                                     gamma=cfg.SOLVER.GAMMA)
 
-    start_epoch = \
-        checkpointer.resume_or_load(cfg.MODEL.WEIGHTS, resume=resume).get("epoch", -1) + 1
+    checkpointer = DetectionCheckpointer(model.module, cfg.OUTPUT_DIR, optimizer=optimizer, scheduler=scheduler)
+    periodic_checkpointer = PeriodicCheckpointer(checkpointer, cfg.SOLVER.CHECKPOINT_PERIOD,
+                                                 max_iter=cfg.SOLVER.MAX_EPOCHS)
+
+    start_epoch = checkpointer.resume_or_load(cfg.MODEL.WEIGHTS, resume=resume).get("iteration", -1) + 1
 
     max_iter = cfg.SOLVER.MAX_EPOCHS * len(data_loader)
 
-    writers = default_writers(cfg.OUTPUT_DIR, None) if comm.is_main_process() else []
+    writers = default_writers(cfg.OUTPUT_DIR, max_iter=max_iter) if comm.is_main_process() else []
 
     # compared to "train_net.py", we do not support accurate timing and
     # precise BN here, because they are not trivial to implement in a small training loop
@@ -147,21 +128,19 @@ def do_train(cfg, model, resume=False):
                 optimizer.step()
                 storage.put_scalar("lr", optimizer.param_groups[0]["lr"], smoothing_hint=False)
 
-                curr_lr = (cfg.SOLVER.BASE_LR - cfg.SOLVER.END_LR) * (1 - global_step / max_iter) ** 0.9
-                curr_lr += cfg.SOLVER.END_LR
-                for param_group in optimizer.param_groups:
-                    param_group['lr'] = curr_lr
-
-                # scheduler.step()
-
                 if (epoch_iter + 1) % cfg.LOG_PERIOD == 0:
                     for writer in writers:
                         writer.write()
 
+            scheduler.step()
+
             periodic_checkpointer.step(epoch)
 
             if cfg.TEST.EVAL_PERIOD > 0 and (epoch + 1) % cfg.TEST.EVAL_PERIOD == 0:
-                do_test(cfg, model)
+                eval_results = do_test(cfg, model, test_data_loader)
+                for tag in eval_results:
+                    storage.put_scalars(**{f"{tag}/k": v for k, v in eval_results[tag].items()})
+
                 # Compared to "train_net.py", the test results are not dumped to EventStorage
                 comm.synchronize()
 
@@ -169,7 +148,7 @@ def do_train(cfg, model, resume=False):
 if __name__ == "__main__":
     args = default_argument_parser().parse_args()
     print("Command Line Args:", args)
-    launch(partial(simple_main, add_cfg_fn=add_config, train_fn=do_train, test_fn=do_test),
+    launch(partial(simple_main, train_fn=do_train, test_fn=do_test),
            args.num_gpus,
            num_machines=args.num_machines,
            machine_rank=args.machine_rank,

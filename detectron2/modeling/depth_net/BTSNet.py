@@ -348,27 +348,26 @@ class BtsModel(nn.Module):
                  cfg.MODEL.DEPTH_NET.FIX_1ST_CONV,
                  cfg.MODEL.DEPTH_NET.FIX_1ST_CONVS)
 
-        self.flip_prob = cfg.MODEL.DEPTH_NET.FLIP_PROB
+    def forward(self, batch):
+        image = batch['depth_net_input']
 
-    def forward(self, data):
-        image = data['depth_net_input']
-        flip = False
-        if self.training and random.random() < self.flip_prob:
+        if batch['flip']:
             image = torch.flip(image, [3])
-            flip = True
 
         skip_feat = self.encoder(image)
 
-        outputs = self.decoder(skip_feat, data['focal'])
+        outputs = self.decoder(skip_feat, batch['focal'])
 
-        if flip:
+        if batch['flip']:
             outputs = [torch.flip(d, [3]) for d in outputs]
 
-        return {'depth_8x8': outputs[0],
-                'depth_4x4': outputs[1],
-                'depth_2x2': outputs[2],
-                'reduc_1x1': outputs[3],
-                'depth_pred': [outputs[4]]}
+        batch.update({'depth_8x8': outputs[0],
+                      'depth_4x4': outputs[1],
+                      'depth_2x2': outputs[2],
+                      'reduc_1x1': outputs[3],
+                      'depth_pred': [outputs[4]]})
+
+        return batch
 
 
 # This sets the batch norm layers in pytorch as if {'is_training': False, 'scale': True} in tensorflow

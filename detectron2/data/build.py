@@ -41,9 +41,14 @@ class DatasetBase(data.Dataset):
     def __getitem__(self, item):
         raise NotImplementedError
 
+    def preprocess(self, data_dict):
+        for preproc in self.preprocesses:
+            data_dict = preproc.forward(data_dict)
+        return data_dict
+
     def get_prediction(self, data_dict):
         for preprocess in self.preprocesses[::-1]:
-            data_dict = preprocess.inverse(data_dict)
+            data_dict = preprocess.backward(data_dict)
         return data_dict
 
     def batch_collator(self, batch):

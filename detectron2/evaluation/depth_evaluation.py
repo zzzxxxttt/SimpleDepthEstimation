@@ -7,8 +7,8 @@ import numpy as np
 from tabulate import tabulate
 
 import detectron2.utils.comm as comm
-from ..data.preprocess.data_io import write_depth
 
+from detectron2.utils.file_utils import write_depth
 from .evaluator import DatasetEvaluator, EVALUATOR_REGISTRY
 from ..utils.memory import to_numpy
 
@@ -43,7 +43,7 @@ def compute_errors(gt, pred):
     sq_rel = np.mean(((gt - pred) ** 2) / gt)
 
     err = np.log(pred) - np.log(gt)
-    silog = np.sqrt(np.mean(err ** 2) - np.mean(err) ** 2) * 100
+    silog = np.sqrt(np.mean(err ** 2) - np.mean(err) ** 2 + 1e-8) * 100
 
     err = np.abs(np.log10(pred) - np.log10(gt))
     log10 = np.mean(err)
@@ -84,7 +84,7 @@ class kitti_evaluator(DatasetEvaluator):
 
             data = {'depth_pred': pred, 'metadata': metadata}
             for postprocess in self.postprocesses:
-                data = postprocess.inverse(data)
+                data = postprocess.backward(data)
             pred = data['depth_pred']
 
             if self.garg_crop:

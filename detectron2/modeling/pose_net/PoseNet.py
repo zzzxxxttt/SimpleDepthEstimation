@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 
 from .build import POSE_NET_REGISTRY
+from ...geometry.pose_utils import pose_vec2mat
 
 
 def conv_gn(in_planes, out_planes, kernel_size=3, group_norm=True, stride=2):
@@ -33,8 +34,7 @@ class PoseNet(nn.Module):
         self.conv6 = conv_gn(channels[4], channels[5])
         self.conv7 = conv_gn(channels[5], channels[6])
 
-        self.pose_pred = nn.Conv2d(channels[6], 6 * self.nb_ref_imgs,
-                                   kernel_size=1, padding=0)
+        self.pose_pred = nn.Conv2d(channels[6], 6 * self.nb_ref_imgs, kernel_size=1, padding=0)
 
         self.init_weights()
 
@@ -45,12 +45,8 @@ class PoseNet(nn.Module):
                 if m.bias is not None:
                     m.bias.data.zero_()
 
-    def forward(self, image, context):
-        assert (len(context) == self.nb_ref_imgs)
-        input = [image]
-        input.extend(context)
-        input = torch.cat(input, 1)
-        out_conv1 = self.conv1(input)
+    def forward(self, batch):
+        out_conv1 = self.conv1(batch['pose_net_input'])
         out_conv2 = self.conv2(out_conv1)
         out_conv3 = self.conv3(out_conv2)
         out_conv4 = self.conv4(out_conv3)
@@ -62,4 +58,6 @@ class PoseNet(nn.Module):
         pose = pose.mean(3).mean(2)
         pose = 0.01 * pose.view(pose.size(0), self.nb_ref_imgs, 6)
 
-        return pose
+        batch['pose_pred'] = [pose_vec2mat(pose[:, i]) for i in range(pose.shape[1])]
+
+        return batch

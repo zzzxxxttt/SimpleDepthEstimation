@@ -4,6 +4,7 @@ import torch.nn.functional as F
 
 from .build import POSE_NET_REGISTRY
 from .PoseNet import conv_gn
+from ...geometry.pose_utils import pose_vec2mat
 
 
 @POSE_NET_REGISTRY.register()
@@ -40,9 +41,8 @@ class GooglePoseNet(nn.Module):
                 if m.bias is not None:
                     m.bias.data.zero_()
 
-    def forward(self, inputs):
-        B, _, _, _ = inputs.shape
-        out_conv1 = self.conv1(inputs)
+    def forward(self, batch):
+        out_conv1 = self.conv1(batch['pose_net_input'])
         out_conv2 = self.conv2(out_conv1)
         out_conv3 = self.conv3(out_conv2)
         out_conv4 = self.conv4(out_conv3)
@@ -50,7 +50,7 @@ class GooglePoseNet(nn.Module):
         out_conv6 = self.conv6(out_conv5)
         out_conv7 = self.conv7(out_conv6)
 
-        pose = self.pose_pred(out_conv7.mean([2, 3], keepdim=True)).view(B, 6)
+        pose = self.pose_pred(out_conv7.mean([2, 3], keepdim=True)).view(batch['pose_net_input'].shape[0], 6)
         trans, rot = pose[:, :3], pose[:, 3:]
 
         if self.learn_scale:
@@ -60,7 +60,28 @@ class GooglePoseNet(nn.Module):
         else:
             pose = torch.cat([trans * 0.01, rot * 0.01], -1)
 
-        return {'pose': pose}
+        batch['pose_pred'] = pose_vec2mat(pose)
+        return batch
+
+
+class MotionRefiner(nn.Module):
+    def __init__(self, trans_channel, skip_channel, group_norm):
+        super().__init__()
+        self.conv1 = conv_gn(trans_channel + skip_channel, skip_channel,
+                             kernel_size=3, group_norm=group_norm, stride=1)
+        self.conv21 = conv_gn(trans_channel + skip_channel, skip_channel,
+                              kernel_size=3, group_norm=group_norm, stride=1)
+        self.conv22 = conv_gn(skip_channel, skip_channel, kernel_size=3, group_norm=group_norm, stride=1)
+        self.conv3 = conv_gn(skip_channel * 2, trans_channel, kernel_size=1, group_norm=group_norm, stride=1)
+
+    def forward(self, trans, trans_skip):
+        upsampled_trans = F.interpolate(trans, size=trans_skip.shape[-2:], mode='bilinear', align_corners=True)
+        inputs = torch.cat([upsampled_trans, trans_skip], 1)
+        out1 = self.conv1(inputs)
+        out2 = self.conv22(self.conv21(inputs))
+        out = torch.cat([out1, out2], 1)
+        out = upsampled_trans + self.conv3(out)
+        return out
 
 
 @POSE_NET_REGISTRY.register()
@@ -108,9 +129,8 @@ class GoogleMotionNet(nn.Module):
                 if m.bias is not None:
                     m.bias.data.zero_()
 
-    def forward(self, inputs):
-        B, _, _, _ = inputs.shape
-        out_conv1 = self.conv1(inputs)
+    def forward(self, batch):
+        out_conv1 = self.conv1(batch['pose_net_input'])
         out_conv2 = self.conv2(out_conv1)
         out_conv3 = self.conv3(out_conv2)
         out_conv4 = self.conv4(out_conv3)
@@ -129,7 +149,7 @@ class GoogleMotionNet(nn.Module):
         residual_motion = self.refiner3(residual_motion, out_conv3)
         residual_motion = self.refiner2(residual_motion, out_conv2)
         residual_motion = self.refiner1(residual_motion, out_conv1)
-        residual_motion = self.refiner0(residual_motion, inputs)
+        residual_motion = self.refiner0(residual_motion, batch['pose_net_input'])
 
         if self.learn_scale:
             trans_scale = torch.relu(self.trans_scale - 0.001) + 0.001
@@ -146,24 +166,7 @@ class GoogleMotionNet(nn.Module):
             # A mask of shape [B, h, w, 1]
             residual_motion *= (sq_residual_motion > mean_sq_residual_motion).float()
 
-        return {'pose': pose, 'motion': residual_motion * self.motion_weight}
+        batch['pose_pred'] = pose
+        batch['motion_pred'] = residual_motion * self.motion_weight
 
-
-class MotionRefiner(nn.Module):
-    def __init__(self, trans_channel, skip_channel, group_norm):
-        super().__init__()
-        self.conv1 = conv_gn(trans_channel + skip_channel, skip_channel,
-                             kernel_size=3, group_norm=group_norm, stride=1)
-        self.conv21 = conv_gn(trans_channel + skip_channel, skip_channel,
-                              kernel_size=3, group_norm=group_norm, stride=1)
-        self.conv22 = conv_gn(skip_channel, skip_channel, kernel_size=3, group_norm=group_norm, stride=1)
-        self.conv3 = conv_gn(skip_channel * 2, trans_channel, kernel_size=1, group_norm=group_norm, stride=1)
-
-    def forward(self, trans, trans_skip):
-        upsampled_trans = F.interpolate(trans, size=trans_skip.shape[-2:], mode='bilinear', align_corners=True)
-        inputs = torch.cat([upsampled_trans, trans_skip], 1)
-        out1 = self.conv1(inputs)
-        out2 = self.conv22(self.conv21(inputs))
-        out = torch.cat([out1, out2], 1)
-        out = upsampled_trans + self.conv3(out)
-        return out
+        return batch

@@ -10,10 +10,10 @@ from ..pose_net import build_pose_net
 from ...utils.memory import to_cuda
 from ...geometry.pose_utils import pose_vec2mat
 from ...geometry.camera import resize_img, scale_intrinsics, resize_img_avgpool, view_synthesis
-from ..losses.smoothness_loss import cal_smoothness_loss
-from ..losses.motion_loss import motion_consistency_loss, motion_smoothness_loss, motion_sparsity_loss
+from ..losses.smoothness_loss import smoothness_loss_fn
+from ..losses.motion_loss import motion_consistency_loss, motion_smoothness_loss_fn, motion_sparsity_loss_fn
 from ..losses.ssim_loss import WeightedSSIM, SSIM
-from ..losses.losses import silog_loss, variance_loss
+from ..losses.losses import silog_loss, variance_loss_fn
 
 logger = logging.getLogger(__name__)
 
@@ -66,18 +66,20 @@ class MotionLearningModel(nn.Module):
         return self.pixel_mean.device
 
     def forward(self, batch):
+        output = {}
+
         batch = to_cuda(batch, self.device)
 
         if self.training:
             # currently only support two frames
-            frame1 = batch["image"]
-            frame2 = batch["context"][0]
+            frame1 = batch["img"]
+            frame2 = batch["ctx_img"][0]
 
             batch['depth_net_input'] = torch.cat([(frame1 - self.pixel_mean) / self.pixel_std,
                                                   (frame2 - self.pixel_mean) / self.pixel_std], 0)
-            output = self.depth_net(batch)
+            batch = self.depth_net(batch)
 
-            depth1, depth2 = zip(*[torch.chunk(d, 2, dim=0) for d in output['depth_pred']])
+            depth1, depth2 = zip(*[torch.chunk(d, 2, dim=0) for d in batch['depth_pred']])
 
             pose_net_input_1 = frame1
             pose_net_input_2 = frame2
@@ -85,17 +87,15 @@ class MotionLearningModel(nn.Module):
                 pose_net_input_1 = torch.cat([pose_net_input_1, depth1[0]], 1)
                 pose_net_input_2 = torch.cat([pose_net_input_2, depth2[0]], 1)
 
-            pose_net_input_1, pose_net_input_2 = torch.cat([pose_net_input_1, pose_net_input_2], 1), \
-                                                 torch.cat([pose_net_input_2, pose_net_input_1], 1)
+            batch['pose_net_input'] = torch.cat([torch.cat([pose_net_input_1, pose_net_input_2], 1),
+                                                 torch.cat([pose_net_input_2, pose_net_input_1], 1)], 0)
 
-            # pose: [2B, 6] motion: [2B, 3, H, W]
-            pose_out = self.pose_net(torch.cat([pose_net_input_1, pose_net_input_2], 0))
-            poses = pose_vec2mat(pose_out['pose'])  # [2B, 4, 4]
+            batch = self.pose_net(batch)  # pose: [2B, 4, 4] motion: [2B, 3, H, W]
 
-            pose_1to2, pose_2to1 = torch.chunk(poses, 2, dim=0)
+            pose_1to2, pose_2to1 = torch.chunk(batch['pose_pred'], 2, dim=0)
             motion_1to2, motion_2to1 = None, None
-            if 'motion' in pose_out:
-                motion_1to2, motion_2to1 = torch.chunk(pose_out['motion'], 2, dim=0)
+            if 'motion_pred' in batch:
+                motion_1to2, motion_2to1 = torch.chunk(batch['motion_pred'], 2, dim=0)
 
             if self.scale_normalize:
                 depth_mean = torch.mean(torch.cat([depth1[0], depth2[0]], 0))
@@ -103,7 +103,7 @@ class MotionLearningModel(nn.Module):
                 depth2_normalized = [d / depth_mean for d in depth2]
                 pose_1to2[:, :3, 3] /= depth_mean
                 pose_2to1[:, :3, 3] /= depth_mean
-                if 'motion' in pose_out:
+                if 'motion_pred' in batch:
                     motion_1to2 /= depth_mean
                     motion_2to1 /= depth_mean
             else:
@@ -128,7 +128,7 @@ class MotionLearningModel(nn.Module):
                 t_1to2 = pose_1to2[:, :3, [3], None]
                 t_2to1 = pose_2to1[:, :3, [3], None]
 
-                if 'motion' in pose_out:
+                if 'motion_pred' in batch:
                     resized_motion_1to2 = resize_img_avgpool(motion_1to2, depth1[i].shape[-2:])
                     resized_motion_2to1 = resize_img_avgpool(motion_2to1, depth2[i].shape[-2:])
                     t_1to2 = t_1to2 + resized_motion_1to2
@@ -151,7 +151,7 @@ class MotionLearningModel(nn.Module):
 
                 losses = merge_loss(losses, output_2_to_1, scale_w)
 
-                if 'motion' in pose_out:
+                if 'motion_pred' in batch:
                     if self.rot_cycle_loss_w > 0 or self.trans_cycle_loss_w > 0:
                         rot_loss, trans_loss = motion_consistency_loss(output_1_to_2['coords_A_in_B'],
                                                                        output_1_to_2['proj_mask'],
@@ -167,15 +167,15 @@ class MotionLearningModel(nn.Module):
 
                     if self.motion_smooth_loss_w > 0.0:
                         losses['motion_smooth_loss'] += \
-                            motion_smoothness_loss(m_1to2_normalized) * scale_w * self.motion_smooth_loss_w
+                            motion_smoothness_loss_fn(m_1to2_normalized) * scale_w * self.motion_smooth_loss_w
                         losses['motion_smooth_loss'] += \
-                            motion_smoothness_loss(m_2to1_normalized) * scale_w * self.motion_smooth_loss_w
+                            motion_smoothness_loss_fn(m_2to1_normalized) * scale_w * self.motion_smooth_loss_w
 
                     if self.motion_sparsity_loss_w > 0.0:
                         losses['motion_sparsity_loss'] += \
-                            motion_sparsity_loss(m_1to2_normalized) * scale_w * self.motion_sparsity_loss_w
+                            motion_sparsity_loss_fn(m_1to2_normalized) * scale_w * self.motion_sparsity_loss_w
                         losses['motion_sparsity_loss'] += \
-                            motion_sparsity_loss(m_2to1_normalized) * scale_w * self.motion_sparsity_loss_w
+                            motion_sparsity_loss_fn(m_2to1_normalized) * scale_w * self.motion_sparsity_loss_w
 
                 if self.sup_loss_w > 0.0:
                     depth1_gt = resize_img(batch['depth_gt'], depth1[i].shape[-2:], mode='nearest')
@@ -188,20 +188,20 @@ class MotionLearningModel(nn.Module):
 
                 if self.smooth_loss_w > 0.0:
                     losses['smooth_loss'] += \
-                        cal_smoothness_loss(depth1[i], resized_frame1) * scale_w * self.smooth_loss_w
+                        smoothness_loss_fn(depth1[i], resized_frame1) * scale_w * self.smooth_loss_w
                     losses['smooth_loss'] += \
-                        cal_smoothness_loss(depth2[i], resized_frame2) * scale_w * self.smooth_loss_w
+                        smoothness_loss_fn(depth2[i], resized_frame2) * scale_w * self.smooth_loss_w
 
                 if self.var_loss_w > 0.0:
-                    losses['var_loss'] += variance_loss(depth1[i]) * scale_w * self.var_loss_w
-                    losses['var_loss'] += variance_loss(depth2[i]) * scale_w * self.var_loss_w
+                    losses['var_loss'] += variance_loss_fn(depth1[i]) * scale_w * self.var_loss_w
+                    losses['var_loss'] += variance_loss_fn(depth2[i]) * scale_w * self.var_loss_w
 
             output.update(losses)
 
         else:
-            batch['depth_net_input'] = (batch["image"] - self.pixel_mean) / self.pixel_std
-            output = self.depth_net(batch)
-            output['depth_pred'] = output['depth_pred'][0]
+            batch['depth_net_input'] = (batch["img"] - self.pixel_mean) / self.pixel_std
+            batch = self.depth_net(batch)
+            output['depth_pred'] = batch['depth_pred'][0]
         return output
 
     def rgbd_consistency_loss(self,

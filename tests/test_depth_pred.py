@@ -1,7 +1,7 @@
 from tqdm import tqdm
 import os
 
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"  # todo
+# os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"  # todo
 
 import torch
 import torch.nn as nn
@@ -10,11 +10,11 @@ import torch.utils.data as data
 import numpy as np
 
 from detectron2.config.config import CfgNode as CN
-from detectron2.data.datasets.kitti_v2 import KittiDepthTrain_v2
+from detectron2.data.datasets.kitti_v2 import KittiDepthVal_v2
 from detectron2.data.build import build_detection_train_loader
 
 from detectron2.modeling.meta_arch.MotionLearning import MotionLearningModel
-from detectron2.modeling.meta_arch.SelfSup import SelfSupDepthModel
+from detectron2.modeling.meta_arch.MonoDepth2 import MonoDepth2Model
 
 from detectron2.utils.logger import setup_logger
 
@@ -94,7 +94,7 @@ if __name__ == '__main__':
                                              collate_fn=dataset.batch_collator)
 
     # model = MotionLearningModel(cfg)
-    model = SelfSupDepthModel(cfg)
+    model = MonoDepth2Model(cfg)
 
     # model = nn.DataParallel(model)
     model.load_state_dict(torch.load(

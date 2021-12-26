@@ -24,7 +24,7 @@ class SupDepthModel(nn.Module):
         super().__init__()
 
         self.depth_net = build_depth_net(cfg)
-        self.supervise_loss = silog_loss(cfg.LOSS.VARIANCE_FOCUS)
+        self.loss = silog_loss(cfg.LOSS.VARIANCE_FOCUS)
 
         self.register_buffer("pixel_mean", torch.Tensor(cfg.MODEL.PIXEL_MEAN).view(1, -1, 1, 1))
         self.register_buffer("pixel_std", torch.Tensor(cfg.MODEL.PIXEL_STD).view(1, -1, 1, 1))
@@ -36,14 +36,13 @@ class SupDepthModel(nn.Module):
     def forward(self, batch):
         batch = to_cuda(batch, self.device)
 
-        batch["image"] = (batch["image"] - self.pixel_mean) / self.pixel_std
+        batch["depth_net_input"] = (batch["img"] - self.pixel_mean) / self.pixel_std
 
         output = self.depth_net(batch)
 
         if self.training:
-            depth_gt = [resize_img(batch['depth_gt'], pred.shape[-2:], mode='nearest')
-                        for pred in output['depth_pred']]
-            sup_losses = [self.supervise_loss(pred, gt) for pred, gt in zip(output['depth_pred'], depth_gt)]
+            depth_gt = [resize_img(batch['depth'], pred.shape[-2:], mode='nearest') for pred in output['depth_pred']]
+            sup_losses = [self.loss(pred, gt) for pred, gt in zip(output['depth_pred'], depth_gt)]
             output['silog_loss'] = sum(sup_losses) / len(sup_losses)
         else:
             output['depth_pred'] = output['depth_pred'][0]

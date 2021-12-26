@@ -16,7 +16,7 @@ from .build import DEPTH_NET_REGISTRY
 @DEPTH_NET_REGISTRY.register()
 class PackNet01(nn.Module):
     """
-    SelfSupervised network with 3d convolutions (version 01, from the CVPR paper).
+    MonoDepth2 network with 3d convolutions (version 01, from the CVPR paper).
 
     https://arxiv.org/abs/1905.02693
 
@@ -61,7 +61,7 @@ class PackNet01(nn.Module):
             n4o, n4i = n4 // 2, n4 // 2
             n5o, n5i = n5 // 2, n5 // 2
         else:
-            raise ValueError('Unknown SelfSupervised version {}'.format(self.version))
+            raise ValueError('Unknown MonoDepth2 version {}'.format(self.version))
 
         # Encoder
 
@@ -116,16 +116,15 @@ class PackNet01(nn.Module):
                 if m.bias is not None:
                     m.bias.data.zero_()
 
-    def forward(self, data):
+    def forward(self, batch):
         """
         Runs the network and returns inverse depth maps
         (4 scales if training and 1 if not).
         """
-        image = data['depth_net_input']
-        flip = False
-        if self.training and random.random() < self.flip_prob:
+        image = batch['depth_net_input']
+
+        if batch.get('flip', False):
             image = torch.flip(image, [3])
-            flip = True
 
         x = self.pre_calc(image)
 
@@ -198,10 +197,12 @@ class PackNet01(nn.Module):
 
         disps = [1 / torch.clamp_min(d, 1e-6) for d in disps]
 
-        if flip:
+        if batch.get('flip', False):
             disps = [torch.flip(d, [3]) for d in disps]
 
         if self.upsample_depth:
-            disps = [resize_img(d, data['depth_net_input'].shape[-2:], mode='nearest') for d in disps]
+            disps = [resize_img(d, batch['depth_net_input'].shape[-2:], mode='nearest') for d in disps]
 
-        return {'depth_pred': disps}
+        batch['depth_pred'] = disps
+
+        return batch
