@@ -30,48 +30,22 @@ import torch
 
 import detectron2.utils.comm as comm
 from detectron2.checkpoint import DetectionCheckpointer, PeriodicCheckpointer
-from detectron2.config import CfgNode as CN
 from detectron2.data import build_detection_test_loader, build_detection_train_loader
 
 from detectron2.engine import default_argument_parser, default_writers, launch
-from detectron2.evaluation import build_evaluator, DatasetEvaluators, inference_on_dataset
 from detectron2.utils.events import EventStorage
 from detectron2.utils.setup import simple_main
 
+from projects.Supervised.train import do_test
+
 logger = logging.getLogger("detectron2")
-
-
-def get_evaluator(cfg, output_folder=None):
-    """
-    Create evaluator(s) for a given dataset.
-    This uses the special metadata "evaluator_type" associated with each builtin dataset.
-    For your own dataset, you can simply create an evaluator manually in your
-    script and do not have to worry about the hacky if-else logic here.
-    """
-    if output_folder is None:
-        output_folder = os.path.join(cfg.OUTPUT_DIR, "inference")
-    evaluator_list = build_evaluator(cfg, output_folder)
-    if len(evaluator_list) == 1:
-        return evaluator_list[0]
-    return DatasetEvaluators(evaluator_list)
-
-
-def do_test(cfg, model, data_loader=None):
-    if data_loader is None:
-        data_loader = build_detection_test_loader(cfg)
-    evaluator = get_evaluator(cfg, os.path.join(cfg.OUTPUT_DIR, "inference", cfg.DATASETS.TEST.NAME))
-    results = inference_on_dataset(model, data_loader, evaluator)
-    # if comm.is_main_process():
-    #   logger.info("Evaluation results for {} in csv format:".format(dataset_name))
-    #   logger.info(results_i)
-    return results
 
 
 def do_train(cfg, model, resume=False):
     model.train()
 
     data_loader = build_detection_train_loader(cfg)
-    test_data_loader = build_detection_test_loader(cfg)
+    data_loader_test = build_detection_test_loader(cfg)
 
     optimizer = torch.optim.Adam([{'name': 'Depth',
                                    'params': model.module.depth_net.parameters(),
@@ -137,7 +111,7 @@ def do_train(cfg, model, resume=False):
             periodic_checkpointer.step(epoch)
 
             if cfg.TEST.EVAL_PERIOD > 0 and (epoch + 1) % cfg.TEST.EVAL_PERIOD == 0:
-                eval_results = do_test(cfg, model, test_data_loader)
+                eval_results = do_test(cfg, model, data_loader_test)
                 for tag in eval_results:
                     storage.put_scalars(**{f"{tag}/k": v for k, v in eval_results[tag].items()})
 

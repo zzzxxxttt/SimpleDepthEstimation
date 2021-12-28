@@ -74,12 +74,7 @@ class kitti_evaluator(DatasetEvaluator):
     def process(self, inputs, outputs):
         inputs, outputs = to_numpy(inputs), to_numpy(outputs)
 
-        metadatas = [{} for _ in outputs['depth_pred']]
-        for k in inputs['metadata']:
-            for i, v in enumerate(inputs['metadata'][k]):
-                metadatas[i][k] = v
-
-        for gt, pred, metadata in zip(inputs['depth_gt_orig'], outputs['depth_pred'], metadatas):
+        for gt, pred, metadata in zip(inputs['depth_orig'], outputs['depth_pred'], inputs['metadata']):
             gt, pred = gt.squeeze(), pred.squeeze()
 
             data = {'depth_pred': pred, 'metadata': metadata}

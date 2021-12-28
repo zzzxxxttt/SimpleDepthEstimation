@@ -63,7 +63,7 @@ class MonoDepth2Model(nn.Module):
 
         if self.training:
             batch['pose_net_input'] = torch.cat([batch['img']] + batch['ctx_img'], 1)
-            batch = self.pose_net(batch)  # [num_ctx * B, 4, 4]
+            batch = self.pose_net(batch)  # num_ctx * [B, 4, 4]
 
             image = batch['img_orig']
             contexts = batch['ctx_img_orig']

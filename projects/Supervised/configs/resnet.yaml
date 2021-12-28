@@ -1,4 +1,4 @@
-_BASE_: "./Base-MotionLearning.yaml"
+_BASE_: "./Base.yaml"
 
 MODEL:
   DEPTH_NET:

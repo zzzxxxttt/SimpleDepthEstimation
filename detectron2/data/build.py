@@ -120,6 +120,9 @@ def build_detection_train_loader(cfg):
 
 
 def build_detection_test_loader(cfg):
+    if 'TEST' not in cfg.DATASETS:
+        return None
+
     dataset = DATASET_REGISTRY.get(cfg.DATASETS.TEST.NAME)(cfg.DATASETS.TEST, cfg)
     assert isinstance(dataset, DatasetBase)
 

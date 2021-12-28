@@ -35,7 +35,7 @@ LOSS:
   SCALE_NORMALIZE: False
 DATASETS:
   TRAIN:
-    NAME: "KittiDepthTrain_v2"
+    NAME: "KittiDepthV2"
     DATA_ROOT: "/data/data/kitti/kitti_raw"
     DEPTH_ROOT: "/data/data/kitti/KITTI_raw_groundtruth"
     SPLIT: "/data/data/kitti/splits/eigen_train_files.txt"
@@ -53,7 +53,7 @@ DATASETS:
       - NAME: RandomImageAug
       - NAME: ToTensor
   TEST:
-    NAME: "KittiDepthVal_v2"
+    NAME: "KittiDepthV2"
     DATA_ROOT: "/data/data/kitti/kitti_raw"
     DEPTH_ROOT: "/data/data/kitti/KITTI_raw_groundtruth"
     SPLIT: "/data/data/kitti/splits/eigen_val_files.txt"

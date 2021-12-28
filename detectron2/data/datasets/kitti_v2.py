@@ -12,11 +12,9 @@ logger = logging.getLogger(__name__)
 
 
 @DATASET_REGISTRY.register()
-class KittiDepthTrain_v2(DatasetBase):
+class KittiDepthV2(DatasetBase):
     def __init__(self, dataset_cfg, cfg):
-        super(KittiDepthTrain_v2, self).__init__(dataset_cfg, cfg)
-
-        self.mode = 'train'
+        super(KittiDepthV2, self).__init__(dataset_cfg, cfg)
 
         self.data_root = dataset_cfg.DATA_ROOT
         self.depth_root = dataset_cfg.DEPTH_ROOT
@@ -214,9 +212,3 @@ class KittiDepthTrain_v2(DatasetBase):
                 ret[key] = value
         return ret
 
-
-@DATASET_REGISTRY.register()
-class KittiDepthVal_v2(KittiDepthTrain_v2):
-    def __init__(self, dataset_cfg, cfg):
-        super(KittiDepthVal_v2, self).__init__(dataset_cfg, cfg)
-        self.mode = 'val'

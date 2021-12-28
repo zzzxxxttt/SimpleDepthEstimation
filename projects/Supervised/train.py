@@ -59,13 +59,11 @@ def get_evaluator(cfg, output_folder=None):
     return DatasetEvaluators(evaluator_list)
 
 
-def do_test(cfg, model):
-    data_loader = build_detection_test_loader(cfg)
+def do_test(cfg, model, data_loader):
+    if data_loader is None:
+        return {}
     evaluator = get_evaluator(cfg, os.path.join(cfg.OUTPUT_DIR, "inference", cfg.DATASETS.TEST.NAME))
     results = inference_on_dataset(model, data_loader, evaluator)
-    # if comm.is_main_process():
-    #   logger.info("Evaluation results for {} in csv format:".format(dataset_name))
-    #   logger.info(results_i)
     return results
 
 
@@ -73,6 +71,7 @@ def do_train(cfg, model, resume=False):
     model.train()
 
     data_loader = build_detection_train_loader(cfg)
+    data_loader_test = build_detection_test_loader(cfg)
 
     # Training parameters
     optimizer = torch.optim.AdamW([{'params': model.module.depth_net.encoder.parameters(),
@@ -135,7 +134,10 @@ def do_train(cfg, model, resume=False):
             periodic_checkpointer.step(epoch)
 
             if cfg.TEST.EVAL_PERIOD > 0 and (epoch + 1) % cfg.TEST.EVAL_PERIOD == 0:
-                do_test(cfg, model)
+                eval_results = do_test(cfg, model, data_loader_test)
+                for tag in eval_results:
+                    storage.put_scalars(**{f"{tag}/k": v for k, v in eval_results[tag].items()})
+
                 # Compared to "train_net.py", the test results are not dumped to EventStorage
                 comm.synchronize()
 

@@ -88,7 +88,7 @@ def setup_logger(
         else:
             filename = os.path.join(output, f"log_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.log")
             if distributed_rank > 0:
-                filename = os.path.join(output, f"log.log") + ".rank{}".format(distributed_rank)
+                filename = os.path.join(output, f"log") + ".rank{}".format(distributed_rank)
         PathManager.mkdirs(os.path.dirname(filename))
 
         fh = logging.StreamHandler(_cached_log_stream(filename))

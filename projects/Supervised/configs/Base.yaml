@@ -5,7 +5,7 @@ LOSS:
   VARIANCE_FOCUS: 0.85
 DATASETS:
   TRAIN:
-    NAME: "KittiDepthVal_v2"
+    NAME: "KittiDepthV2"
     DATA_ROOT: "/data/data/kitti/kitti_raw"
     DEPTH_ROOT: "/data/data/kitti/KITTI_raw_groundtruth"
     SPLIT: "/data/data/kitti/splits/eigen_train_files.txt"
@@ -23,7 +23,7 @@ DATASETS:
       - NAME: RandomImageAug
       - NAME: ToTensor
   TEST:
-    NAME: "KittiDepthVal_v2"
+    NAME: "KittiDepthV2"
     DATA_ROOT: "/data/data/kitti/kitti_raw"
     DEPTH_ROOT: "/data/data/kitti/KITTI_raw_groundtruth"
     SPLIT: "/data/data/kitti/splits/eigen_val_files.txt"
@@ -48,5 +48,7 @@ EVALUATORS: (
   "kitti_evaluator_30_50",
   "kitti_evaluator_50_80"
   )
+TEST:
+  GT_SCALE: false
 VERSION: 2
 LOG_PERIOD: 20

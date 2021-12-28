@@ -1,4 +1,4 @@
-_BASE_: "./Base-SupDepth.yaml"
+_BASE_: "./Base.yaml"
 
 MODEL:
   DEPTH_NET:

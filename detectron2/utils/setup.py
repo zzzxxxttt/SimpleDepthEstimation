@@ -7,6 +7,7 @@ from detectron2.engine import default_setup
 from detectron2.modeling import build_model
 from detectron2.layers.fakeDDP import FakeDDP
 from detectron2.checkpoint import DetectionCheckpointer
+from detectron2.data import build_detection_test_loader
 
 
 def simple_main(args, train_fn, test_fn=None):
@@ -18,7 +19,7 @@ def simple_main(args, train_fn, test_fn=None):
     cfg.merge_from_file(args.cfg)
     cfg.merge_from_list(args.opts)
 
-    model_name = args.cfg.split('/')[-2]
+    model_name = args.cfg.split('/')[-3]
     cfg_name = os.path.splitext(args.cfg.split('/')[-1])[0]
     cfg.RUN_NAME = f'{model_name}_{cfg_name}' + (f'_{cfg.RUN_NAME}' if cfg.RUN_NAME else '')
     cfg.OUTPUT_DIR = os.path.join(cfg.OUTPUT_DIR, cfg.RUN_NAME)
@@ -31,7 +32,8 @@ def simple_main(args, train_fn, test_fn=None):
     # logger.info("Model:\n{}".format(model)) # note: uncomment this to see the model structure
     if args.eval and test_fn is not None:
         DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(cfg.MODEL.WEIGHTS, resume=args.resume)
-        return test_fn(cfg, model)
+        data_loader = build_detection_test_loader(cfg)
+        return test_fn(cfg, model, data_loader)
 
     distributed = comm.get_world_size() > 1
     if distributed:
@@ -43,7 +45,5 @@ def simple_main(args, train_fn, test_fn=None):
         model = FakeDDP(model)
 
     train_fn(cfg, model, resume=args.resume)
-    if test_fn is not None:
-        return test_fn(cfg, model)
-    else:
-        return
+
+    return

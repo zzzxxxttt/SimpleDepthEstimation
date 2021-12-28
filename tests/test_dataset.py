@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 
 from detectron2.config.config import CfgNode as CN
-from detectron2.data.datasets.kitti_v2 import KittiDepthTrain_v2
+from detectron2.data.datasets.kitti_v2 import KittiDepthV2
 from detectron2.utils.logger import setup_logger
 
 logger = setup_logger()
@@ -38,7 +38,7 @@ if __name__ == '__main__':
     cfg.MODEL = CN()
     cfg.MODEL.MAX_DEPTH = 80
 
-    dataset = KittiDepthTrain_v2(cfg.DATASETS.TRAIN, cfg)
+    dataset = KittiDepthV2(cfg.DATASETS.TRAIN, cfg)
 
     for data in tqdm(dataset):
         pass

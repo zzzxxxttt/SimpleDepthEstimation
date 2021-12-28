@@ -10,7 +10,7 @@ import torch.utils.data as data
 import numpy as np
 
 from detectron2.config.config import CfgNode as CN
-from detectron2.data.datasets.kitti_v2 import KittiDepthVal_v2
+from detectron2.data.datasets.kitti_v2 import KittiDepthV2
 from detectron2.data.build import build_detection_train_loader
 
 from detectron2.modeling.meta_arch.MotionLearning import MotionLearningModel
@@ -86,7 +86,7 @@ if __name__ == '__main__':
     cfg.LOSS.TRANS_CYCLE_WEIGHT = 0
     cfg.LOSS.SCALE_NORMALIZE = True
 
-    dataset = KittiDepthTrain_v2(cfg.DATASETS.TRAIN, cfg)
+    dataset = KittiDepthV2(cfg.DATASETS.TRAIN, cfg)
     dataloader = torch.utils.data.DataLoader(dataset,
                                              num_workers=0,
                                              batch_size=2,
