@@ -31,11 +31,13 @@ class KittiDepthV2(DatasetBase):
         self.with_context_depth = dataset_cfg.get('WITH_CONTEXT_DEPTH', False)
 
         self.metadatas = []
+        count = 0
         for line in open(self.split_file, 'r'):
             line = line.strip().split()
             date = line[0].split('/')[0]
             drive = line[0].split('/')[1].replace(f'{date}_drive_', '').replace('_sync', '')
             img_id = line[0].split('/')[-1].replace('.png', '')
+            count += 1
 
             # check file exists
             if (not os.path.isfile(self._get_img_dir(date, drive, img_id))) \
@@ -47,7 +49,8 @@ class KittiDepthV2(DatasetBase):
 
         self.metadatas = sorted(self.metadatas, key=lambda x: (x[0], x[1], x[2]))
 
-        logger.info(f'Loaded {len(self.metadatas)} samples')
+        logger.info(f'Loaded {count} samples')
+        logger.info(f'After existence filtering, {len(self.metadatas)} samples left')
 
         # If using context, filter file list
         self.context_list = [[] for _ in range(len(self.metadatas))]
@@ -211,4 +214,3 @@ class KittiDepthV2(DatasetBase):
             else:
                 ret[key] = value
         return ret
-

@@ -7,9 +7,9 @@ DATASETS:
   TRAIN:
     NAME: "KittiDepthV2"
     DATA_ROOT: "/data/data/kitti/kitti_raw"
-    DEPTH_ROOT: "/data/data/kitti/KITTI_raw_groundtruth"
+    DEPTH_ROOT: "/data/data/kitti/kitti_depth_refined"
     SPLIT: "/data/data/kitti/splits/eigen_train_files.txt"
-    DEPTH_TYPE: "groundtruth"
+    DEPTH_TYPE: "refined"
     PREPROCESS:
       - NAME: LoadImg
       - NAME: LoadDepth
@@ -17,17 +17,17 @@ DATASETS:
         MAX_DEPTH: *max_depth
       - NAME: KBCrop
       - NAME: RandomCrop
-        IMG_W: 640
-        IMG_H: 192
+        IMG_W: 704
+        IMG_H: 352
       - NAME: RandomFlip
       - NAME: RandomImageAug
       - NAME: ToTensor
   TEST:
     NAME: "KittiDepthV2"
     DATA_ROOT: "/data/data/kitti/kitti_raw"
-    DEPTH_ROOT: "/data/data/kitti/KITTI_raw_groundtruth"
-    SPLIT: "/data/data/kitti/splits/eigen_val_files.txt"
-    DEPTH_TYPE: "groundtruth"
+    DEPTH_ROOT: "/data/data/kitti/kitti_depth_refined"
+    SPLIT: "/data/data/kitti/splits/eigen_test_files.txt"
+    DEPTH_TYPE: "refined"
     PREPROCESS:
       - NAME: LoadImg
       - NAME: LoadDepth
@@ -40,7 +40,7 @@ SOLVER:
   IMS_PER_BATCH: 16
   DEPTH_LR: 0.0001
   DEPTH_END_LR: 0.00001
-  MAX_EPOCHS: 30
+  MAX_EPOCHS: 50
   CHECKPOINT_PERIOD: 1
 EVALUATORS: (
   "kitti_evaluator",

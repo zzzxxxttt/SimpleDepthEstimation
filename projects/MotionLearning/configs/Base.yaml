@@ -37,7 +37,7 @@ DATASETS:
   TRAIN:
     NAME: "KittiDepthV2"
     DATA_ROOT: "/data/data/kitti/kitti_raw"
-    DEPTH_ROOT: "/data/data/kitti/KITTI_raw_groundtruth"
+    DEPTH_ROOT: "/data/data/kitti/kitti_depth_groundtruth"
     SPLIT: "/data/data/kitti/splits/eigen_train_files.txt"
     DEPTH_TYPE: "none"
     WITH_POSE: False
@@ -55,9 +55,9 @@ DATASETS:
   TEST:
     NAME: "KittiDepthV2"
     DATA_ROOT: "/data/data/kitti/kitti_raw"
-    DEPTH_ROOT: "/data/data/kitti/KITTI_raw_groundtruth"
-    SPLIT: "/data/data/kitti/splits/eigen_val_files.txt"
-    DEPTH_TYPE: "groundtruth"
+    DEPTH_ROOT: "/data/data/kitti/kitti_depth_refined"
+    SPLIT: "/data/data/kitti/splits/eigen_test_files.txt"
+    DEPTH_TYPE: "refined"
     WITH_POSE: False
     PREPROCESS:
       - NAME: LoadImg

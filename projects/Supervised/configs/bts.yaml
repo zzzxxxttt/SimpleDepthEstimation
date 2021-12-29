@@ -1,12 +1,19 @@
 _BASE_: "./Base.yaml"
 
 MODEL:
+  DATASET: "kitti"
   DEPTH_NET:
     NAME: "BtsModel"
     ENCODER_NAME: "resnet50_bts"
     BTS_SIZE: 512
+    BN_NO_TRACK: false
+    FIX_1ST_CONV: false
+    FIX_1ST_CONVS: false
+    FLIP_PROB: 0.5
 SOLVER:
-  IMS_PER_BATCH: 16
+  IMS_PER_BATCH: 4
+  DEPTH_LR: 0.0001
+  DEPTH_END_LR: 0.00001
 DATALOADER:
   NUM_WORKERS: 6
 LOG_PERIOD: 10

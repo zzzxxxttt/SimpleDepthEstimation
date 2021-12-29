@@ -29,7 +29,7 @@ if __name__ == '__main__':
 
     cfg.DATASETS.TRAIN.SPLIT = "E:/splits/eigen_train_files_d3.txt"
     cfg.DATASETS.TRAIN.DATA_ROOT = "E:/kitti_d3"
-    cfg.DATASETS.TRAIN.DEPTH_ROOT = "E:/KITTI_raw_groundtruth_d3"
+    cfg.DATASETS.TRAIN.DEPTH_ROOT = "E:/kitti_depth_groundtruth_d3"
     cfg.DATASETS.TRAIN.IMG_WIDTH = 320
     cfg.DATASETS.TRAIN.IMG_HEIGHT = 96
 

@@ -21,7 +21,7 @@ if __name__ == '__main__':
 
     cfg.DATASETS.TRAIN.SPLIT = "E:\A\splits\eigen_train_files.txt"
     cfg.DATASETS.TRAIN.DATA_ROOT = "E:\A\kitti_raw"
-    cfg.DATASETS.TRAIN.DEPTH_ROOT = "E:\A\KITTI_raw_groundtruth"
+    cfg.DATASETS.TRAIN.DEPTH_ROOT = "E:\A\kitti_depth_groundtruth"
     cfg.DATASETS.TRAIN.IMG_WIDTH = 384
     cfg.DATASETS.TRAIN.IMG_HEIGHT = 192
 

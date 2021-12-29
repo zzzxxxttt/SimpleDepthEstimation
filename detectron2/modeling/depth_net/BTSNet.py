@@ -356,7 +356,7 @@ class BtsModel(nn.Module):
 
         skip_feat = self.encoder(image)
 
-        outputs = self.decoder(skip_feat, batch['focal'])
+        outputs = self.decoder(skip_feat, batch['intrinsics'][:, 0, 0])
 
         if batch['flip']:
             outputs = [torch.flip(d, [3]) for d in outputs]
