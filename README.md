@@ -56,8 +56,9 @@ python tools/demo.py --cfg path/to/config --input path/to/image --output path/to
 ```
 
 **Demo results:**
-<img src="https://github.com/zzzxxxttt/SimpleDepthEstimation/blob/master/imgs/0000000100.png" width="700" />
-<img src="https://github.com/zzzxxxttt/SimpleDepthEstimation/blob/master/imgs/depth_0000000100.png" width="700" />
+
+![](imgs/0000000100.png)
+![](imgs/depth_0000000100.png)
 
 
 ## Todo
