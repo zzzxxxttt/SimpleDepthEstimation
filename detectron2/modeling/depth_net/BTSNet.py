@@ -351,14 +351,14 @@ class BtsModel(nn.Module):
     def forward(self, batch):
         image = batch['depth_net_input']
 
-        if batch['flip']:
+        if batch.get('flip', False):
             image = torch.flip(image, [3])
 
         skip_feat = self.encoder(image)
 
         outputs = self.decoder(skip_feat, batch['intrinsics'][:, 0, 0])
 
-        if batch['flip']:
+        if batch.get('flip', False):
             outputs = [torch.flip(d, [3]) for d in outputs]
 
         batch.update({'depth_8x8': outputs[0],

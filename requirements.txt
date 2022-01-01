@@ -1,0 +1,14 @@
+cloudpickle==2.0.0
+easydict==1.9
+fvcore==0.1.3.post20210204
+hydra-core==1.1.1
+iopath==0.1.9
+matplotlib==3.3.4
+numpy==1.19.5
+omegaconf==2.1.1
+opencv_python==4.5.4.60
+Pillow==8.4.0
+PyYAML==6.0
+tabulate==0.8.9
+termcolor==1.1.0
+tqdm==4.62.3
