@@ -66,5 +66,6 @@ if __name__ == "__main__":
         plt.imshow(data['depth_pred'], cmap='plasma')
         plt.axis('off')
         plt.tight_layout()
-        plt.savefig(os.path.join(args.output, 'depth_' + os.path.split(args.input)[-1]), dpi=300, transparent=True)
+        plt.savefig(os.path.join(args.output, 'depth_' + os.path.split(args.input)[-1]),
+                    dpi=300, transparent=True, bbox_inches='tight', pad_inches=0)
         plt.show()

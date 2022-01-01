@@ -62,8 +62,8 @@ python tools/demo.py --cfg path/to/config --input path/to/image --output path/to
 ![](imgs/depth_0000000100.png)
 
 ## Todo
-- [ ] add [PackNet](https://arxiv.org/abs/1905.02693) implementation (I have added it, performance need verification)
-- [ ] add [Dynamic Motion Learning](https://arxiv.org/abs/2010.16404) implementation (I have implemented it but still buggy, help welcome!)
+- [ ] add [PackNet](https://arxiv.org/abs/1905.02693) (I have added it, performance need verification)
+- [ ] add [Dynamic Motion Learning](https://arxiv.org/abs/2010.16404) (I have implemented it but still buggy, help welcome!)
 - [ ] support more datasets
 
 ## Reference
