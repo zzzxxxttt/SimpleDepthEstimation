@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This is a unified codebase for NN-based monocular depth estimation models and methods, the main framework is based on detectron2 (with a lot of simplification) and supports both supervised and self-supervised monocular depth estimation methods. The main goal for developing this repository is to let me better understand popular depth estimation methods, so the code is written in a simple and easy to understand manner, it will be my pleasure if this repo helps you too.
+This is a unified codebase for NN-based monocular depth estimation models and methods, the main framework is based on [detectron2](https://github.com/facebookresearch/detectron2) (with a lot of modifications) and supports both supervised and self-supervised monocular depth estimation methods. The main goal for developing this repository is to let me better understand popular depth estimation methods, so the code is written in a simple and easy to understand manner, it will be my pleasure if this repo helps you too.
 
 
 ## Environment:
@@ -17,7 +17,7 @@ This is a unified codebase for NN-based monocular depth estimation models and me
    conda create -n sde python=3.6 
    conda activate sde
    ```
-3. install torch==1.8.0 and torchvision==0.9.0 follow the [official instructions](https://pytorch.org/). (I haven't try other pytorch versions)
+3. install torch==1.8.0 and torchvision==0.9.0 follow the [official instructions](https://pytorch.org/). (I haven't tried other pytorch versions)
 4. install other requirements
    ```bash
    pip install -r requirements.txt
@@ -57,5 +57,17 @@ python tools/demo.py --cfg path/to/config --input path/to/image --output path/to
 
 **Demo results:**
 
-<img src="imgs/0000000100.png" width="500" />
-<img src="imgs/depth_0000000100.png" width="500" />
+<img src="https://github.com/zzzxxxttt/SimpleDepthEstimation/blob/master/imgs/0000000100.png" width="500" />
+<img src="https://github.com/zzzxxxttt/SimpleDepthEstimation/blob/master/imgs/depth_0000000100.png" width="500" />
+
+
+## Todo
+- [ ] add [PackNet](https://arxiv.org/abs/1905.02693) implementation (I have added it, performance need verification)
+- [ ] add [Dynamic Motion Learning](https://arxiv.org/abs/2010.16404) implementation (I have implemented it but still buggy, help welcome!)
+- [ ] support more datasets
+
+## Reference
+- [detectron2](https://github.com/facebookresearch/detectron2)
+- [monodepth2](https://github.com/nianticlabs/monodepth2)
+- [bts](https://github.com/cleinc/bts)
+- [packnet-sfm](https://github.com/TRI-ML/packnet-sfm)
