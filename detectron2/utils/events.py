@@ -254,8 +254,8 @@ class CommonMetricPrinter(EventWriter):
         # NOTE: max_mem is parsed by grep in "dev/parse_results.sh"
         epoch_str = f"[{storage.epoch:0{len(str(storage.max_epoch))}d}/{storage.max_epoch}]"
         iter_str = f"[{storage.epoch_iter:0{len(str(storage.max_epoch_iter))}d}/{storage.max_epoch_iter}] "
-        loss_str = "  ".join([f"{k}: {v.median(self._window_size):.6f}"
-                              for k, v in storage.histories().items() if "loss" in k])
+        loss_str = "loss --> " + "  ".join([f"{k.replace('_loss', '')}: {v.median(self._window_size):.6f}"
+                                            for k, v in storage.histories().items() if "loss" in k])
         time_str = f"time: {iter_time:.4f} " if iter_time is not None else ""
         data_time_str = f"data_time: {data_time:.4f} " if data_time is not None else ""
         memory_str = f"max_mem: {max_mem_mb:.0f}M " if max_mem_mb is not None else ""

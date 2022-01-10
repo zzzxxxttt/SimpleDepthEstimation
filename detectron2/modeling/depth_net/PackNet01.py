@@ -1,5 +1,6 @@
 # Copyright 2020 Toyota Research Institute.  All rights reserved.
 import random
+from functools import partial
 
 import torch
 import torch.nn as nn
@@ -34,7 +35,7 @@ class PackNet01(nn.Module):
 
     def __init__(self, cfg, **kwargs):
         super().__init__()
-        self.version = cfg.MODEL.DEPTH_NET.ENCODER_NAME[1:]
+        self.version = cfg.MODEL.DEPTH_NET.VERSION[1:]
         # Input/output channels
         in_channels = 3
         out_channels = 1
@@ -105,8 +106,8 @@ class PackNet01(nn.Module):
 
         self.init_weights()
 
+        self.scale_inv_depth = partial(disp_to_depth, min_depth=0.1, max_depth=cfg.MODEL.MAX_DEPTH)
         self.upsample_depth = cfg.MODEL.DEPTH_NET.UPSAMPLE_DEPTH
-        self.flip_prob = cfg.MODEL.DEPTH_NET.FLIP_PROB
 
     def init_weights(self):
         """Initializes network weights."""
@@ -195,7 +196,7 @@ class PackNet01(nn.Module):
 
         disps = [disp1, disp2, disp3, disp4]
 
-        disps = [1 / torch.clamp_min(d, 1e-6) for d in disps]
+        disps = [self.scale_inv_depth(d)[1] for d in disps]
 
         if batch.get('flip', False):
             disps = [torch.flip(d, [3]) for d in disps]

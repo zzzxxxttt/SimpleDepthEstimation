@@ -12,3 +12,4 @@ PyYAML==6.0
 tabulate==0.8.9
 termcolor==1.1.0
 tqdm==4.62.3
+imageio

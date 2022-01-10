@@ -1,0 +1,16 @@
+_BASE_: "./Base.yaml"
+
+MODEL:
+  DEPTH_NET:
+    NAME: 'PackNet01'
+    VERSION: '1A'
+    UPSAMPLE_DEPTH: false
+  POSE_NET:
+    NAME: "PoseNet"
+    NUM_CONTEXTS: 2
+LOSS:
+  VAR_LOSS_WEIGHT: 0.0001
+SOLVER:
+  IMS_PER_BATCH: 8
+DATALOADER:
+  NUM_WORKERS: 6

@@ -4,16 +4,12 @@ MODEL:
   DEPTH_NET:
     NAME: "DepthResNet"
     ENCODER_NAME: "18pt"
-    #    NAME: "BtsModel"
-    #    ENCODER_NAME: "resnet50_bts"
-    #    BTS_SIZE: 512
     UPSAMPLE_DEPTH: True
     LEARN_SCALE: False
-    FLIP_PROB: 0.5
     NOISE_STDDEV: 0.5
     RAMPUP_ITERS: 10000
   POSE_NET:
-    NAME: "GoogleMotionNet"
+    NAME: "GooglePoseNet"
     USE_DEPTH: True
     GROUP_NORM: False
     MASK_MOTION: True
