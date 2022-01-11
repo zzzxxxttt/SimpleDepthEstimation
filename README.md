@@ -56,15 +56,15 @@ python path/to/project/train.py --num-gpus 2 --cfg path/to/config --eval MODEL.W
 python tools/demo.py --cfg path/to/config --input path/to/image --output path/to/output_dir MODEL.WEIGHTS /path/to/checkpoint_file
 ```
 
-**Demo results:**
+**visualization:**
 
 ![](imgs/vis.gif)
 
 ## Todo
 - [ ] add [Dynamic Motion Learning](https://arxiv.org/abs/2010.16404) (I have implemented it but still buggy, help welcome!)
 - [ ] add [Depth From Videos in the Wild](https://openaccess.thecvf.com/content_ICCV_2019/html/Gordon_Depth_From_Videos_in_the_Wild_Unsupervised_Monocular_Depth_Learning_ICCV_2019_paper.html)
+- [ ] add [Full Surround Monodepth](https://arxiv.org/abs/2104.00152)
 - [ ] support more datasets
-- [ ] support multi camera
 
 ## Reference
 - [detectron2](https://github.com/facebookresearch/detectron2)
