@@ -50,7 +50,7 @@ python path/to/project/train.py --num-gpus 2 --cfg path/to/config --eval MODEL.W
 |   [BTSNet](https://arxiv.org/abs/1907.10326) (ResNet-50)   |   supervised    |  [link](projects/Supervised/configs/bts_r50.yaml)   |    0.062    |   0.259    | 2.859 |  0.100  | 0.950 | 0.992 | 0.998 |
 | [MonoDepth2](https://arxiv.org/abs/1806.01260) (ResNet-18) | self-supervised | [link](projects/MonoDepth2/configs/resnet18.yaml) |    0.118    |   0.735    | 4.517 |  0.163  | 0.860 | 0.974 | 0.994 |
 | [MonoDepth2](https://arxiv.org/abs/1806.01260) (ResNet-50) | self-supervised | [link](projects/MonoDepth2/configs/resnet50.yaml) |    0.108    |   0.674    | 4.414 |  0.153  | 0.882 | 0.976 | 0.994 |
-| [PackNet](https://arxiv.org/abs/1905.02693) | self-supervised | [link](projects/MonoDepth2/configs/packnet.yaml) |    0.107    |   0.762    | 4.577 |  0.159  | 0.884 | 0.972 | 0.992 |
+| [PackNet](https://arxiv.org/abs/1905.02693) (1A) | self-supervised | [link](projects/MonoDepth2/configs/packnet_1a.yaml) |    0.107    |   0.762    | 4.577 |  0.159  | 0.884 | 0.972 | 0.992 |
 
 
 ## Demo:
