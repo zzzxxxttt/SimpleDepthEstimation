@@ -24,7 +24,7 @@ import sys
 import logging
 from functools import partial
 
-sys.path.insert(0, '/root/data/det2')
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 
 os.environ["OMP_NUM_THREADS"] = '1'
 

@@ -1,0 +1,11 @@
+_BASE_: "./Base.yaml"
+
+MODEL:
+  DEPTH_NET:
+    NAME: "DepthResNet"
+    ENCODER_NAME: "50pt"
+    UPSAMPLE_DEPTH: false
+SOLVER:
+  IMS_PER_BATCH: 16
+DATALOADER:
+  NUM_WORKERS: 6

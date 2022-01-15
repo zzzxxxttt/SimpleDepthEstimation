@@ -32,9 +32,9 @@ LOSS:
 DATASETS:
   TRAIN:
     NAME: "KittiDepthV2"
-    DATA_ROOT: "/data/data/kitti/kitti_raw"
-    DEPTH_ROOT: "/data/data/kitti/kitti_depth_groundtruth"
-    SPLIT: "/data/data/kitti/splits/eigen_train_files.txt"
+    DATA_ROOT: "/data2/data/kitti/kitti_raw"
+    DEPTH_ROOT: "/data2/data/kitti/kitti_depth_groundtruth"
+    SPLIT: "/data2/data/kitti/splits/eigen_train_files.txt"
     DEPTH_TYPE: "none"
     WITH_POSE: False
     BACKWARD_CONTEXT: 1
@@ -50,9 +50,9 @@ DATASETS:
       - NAME: ToTensor
   TEST:
     NAME: "KittiDepthV2"
-    DATA_ROOT: "/data/data/kitti/kitti_raw"
-    DEPTH_ROOT: "/data/data/kitti/kitti_depth_refined"
-    SPLIT: "/data/data/kitti/splits/eigen_test_files.txt"
+    DATA_ROOT: "/data2/data/kitti/kitti_raw"
+    DEPTH_ROOT: "/data2/data/kitti/kitti_depth_refined"
+    SPLIT: "/data2/data/kitti/splits/eigen_test_files.txt"
     DEPTH_TYPE: "refined"
     WITH_POSE: False
     PREPROCESS:
@@ -74,6 +74,7 @@ SOLVER:
   GAMMA: 0.5
   MAX_EPOCHS: 20
   CHECKPOINT_PERIOD: 1
+  CLIP_GRAD: 35
 EVALUATORS: (
   "kitti_evaluator",
   "kitti_evaluator_0_30",

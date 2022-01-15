@@ -1,0 +1,14 @@
+_BASE_: "./Base.yaml"
+
+MODEL:
+  DEPTH_NET:
+    NAME: "DepthResNet"
+    ENCODER_NAME: "18pt"
+    UPSAMPLE_DEPTH: false
+  POSE_NET:
+    NAME: "PoseNet"
+    NUM_CONTEXTS: 2
+SOLVER:
+  IMS_PER_BATCH: 16
+DATALOADER:
+  NUM_WORKERS: 6
