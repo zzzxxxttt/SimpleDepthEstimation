@@ -143,8 +143,8 @@ def points_to_img(points, R, t):
     proj = R.bmm(points.view(B, 3, -1)) + t
 
     # Normalize points
-    X = proj[:, 0]
-    Y = proj[:, 1]
+    X = proj[:, 0] / (proj[:, 2] + 1e-6)
+    Y = proj[:, 1] / (proj[:, 2] + 1e-6)
     Z = proj[:, 2]
 
     valid_proj_mask = (X >= 0) & (X < W) & \
@@ -153,8 +153,8 @@ def points_to_img(points, R, t):
 
     Z = Z.clamp(min=1e-5)
 
-    Xnorm = 2 * (X / Z) / (W - 1) - 1.
-    Ynorm = 2 * (Y / Z) / (H - 1) - 1.
+    Xnorm = 2 * X / (W - 1) - 1.
+    Ynorm = 2 * Y / (H - 1) - 1.
 
     # Clamp out-of-bounds pixels
     # Xmask = ((Xnorm > 1) + (Xnorm < -1)).detach()

@@ -33,7 +33,7 @@ def gradient_y(image):
     return image[:, :, :-1, :] - image[:, :, 1:, :]
 
 
-def smoothness_loss_fn(depth, image):
+def smoothness_loss(depth, image):
     """
     Calculate smoothness values for inverse depths
 

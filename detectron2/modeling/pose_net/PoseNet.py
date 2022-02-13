@@ -10,11 +10,13 @@ from .build import POSE_NET_REGISTRY
 from ...geometry.pose_utils import pose_vec2mat
 
 
-def conv_gn(in_planes, out_planes, kernel_size=3, group_norm=True, stride=2):
-    return nn.Sequential(nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size,
-                                   padding=(kernel_size - 1) // 2, stride=stride),
-                         nn.GroupNorm(16, out_planes) if group_norm else nn.Sequential(),
-                         nn.ReLU(inplace=True))
+def conv_gn_relu(in_planes, out_planes, kernel_size=3, stride=2, group_norm=True):
+    layers = [nn.Conv2d(in_planes, out_planes,
+                        kernel_size=kernel_size, padding=(kernel_size - 1) // 2, stride=stride),
+              nn.ReLU(inplace=True)]
+    if group_norm:
+        layers.insert(1, nn.GroupNorm(16, out_planes))
+    return nn.Sequential(*layers)
 
 
 @POSE_NET_REGISTRY.register()
@@ -26,13 +28,13 @@ class PoseNet(nn.Module):
         self.nb_ref_imgs = cfg.MODEL.POSE_NET.NUM_CONTEXTS
 
         channels = [16, 32, 64, 128, 256, 256, 256]
-        self.conv1 = conv_gn(3 * (1 + self.nb_ref_imgs), channels[0], kernel_size=7)
-        self.conv2 = conv_gn(channels[0], channels[1], kernel_size=5)
-        self.conv3 = conv_gn(channels[1], channels[2])
-        self.conv4 = conv_gn(channels[2], channels[3])
-        self.conv5 = conv_gn(channels[3], channels[4])
-        self.conv6 = conv_gn(channels[4], channels[5])
-        self.conv7 = conv_gn(channels[5], channels[6])
+        self.conv1 = conv_gn_relu(3 * (1 + self.nb_ref_imgs), channels[0], kernel_size=7)
+        self.conv2 = conv_gn_relu(channels[0], channels[1], kernel_size=5)
+        self.conv3 = conv_gn_relu(channels[1], channels[2])
+        self.conv4 = conv_gn_relu(channels[2], channels[3])
+        self.conv5 = conv_gn_relu(channels[3], channels[4])
+        self.conv6 = conv_gn_relu(channels[4], channels[5])
+        self.conv7 = conv_gn_relu(channels[5], channels[6])
 
         self.pose_pred = nn.Conv2d(channels[6], 6 * self.nb_ref_imgs, kernel_size=1, padding=0)
 

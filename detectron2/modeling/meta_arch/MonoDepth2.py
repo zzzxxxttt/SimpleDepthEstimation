@@ -7,9 +7,9 @@ import torch.nn as nn
 from .build import META_ARCH_REGISTRY
 from ..depth_net import build_depth_net
 from ..pose_net import build_pose_net
-from ..losses.smoothness_loss import smoothness_loss_fn
+from ..losses.smoothness_loss import smoothness_loss
 from ..losses.photometric_loss import PhotometricLoss
-from ..losses.losses import silog_loss, variance_loss_fn
+from ..losses.losses import silog_loss, variance_loss
 from ..losses.ssim_loss import SSIM
 from ...utils.memory import to_cuda
 from ...geometry.camera import resize_img, scale_intrinsics, view_synthesis
@@ -101,7 +101,7 @@ class MonoDepth2Model(nn.Module):
                                                                          None, None))
 
                 if self.smooth_loss_w > 0.0:
-                    losses['smooth_loss'] += smoothness_loss_fn(depth_pred[i], resized_image) * \
+                    losses['smooth_loss'] += smoothness_loss(depth_pred[i], resized_image) * \
                                              scale_w * self.smooth_loss_w / num_scales
 
                 if self.sup_loss_w > 0.0:
@@ -110,7 +110,7 @@ class MonoDepth2Model(nn.Module):
                                           scale_w * self.smooth_loss_w / num_scales
 
                 if self.var_loss_w > 0.0:
-                    losses['var_loss'] += variance_loss_fn(depth_pred[i]) * scale_w * self.var_loss_w / num_scales
+                    losses['var_loss'] += variance_loss(depth_pred[i]) * scale_w * self.var_loss_w / num_scales
 
             # Calculate reduced photometric loss
             if self.photometric_reduce == 'mean':

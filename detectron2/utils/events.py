@@ -98,7 +98,8 @@ class JSONWriter(EventWriter):
             window_size (int): the window size of median smoothing for the scalars whose
                 `smoothing_hint` are True.
         """
-        self._file_handle = PathManager.open(json_file, "a")
+        # self._file_handle = PathManager.open(json_file, "a")
+        self._file_handle = PathManager.open(json_file, "w")
         self._window_size = window_size
         self._last_write = -1
 
@@ -258,7 +259,8 @@ class CommonMetricPrinter(EventWriter):
                                             for k, v in storage.histories().items() if "loss" in k])
         time_str = f"time: {iter_time:.4f} " if iter_time is not None else ""
         data_time_str = f"data_time: {data_time:.4f} " if data_time is not None else ""
-        memory_str = f"max_mem: {max_mem_mb:.0f}M " if max_mem_mb is not None else ""
+        # memory_str = f"max_mem: {max_mem_mb:.0f}M " if max_mem_mb is not None else ""
+        memory_str = ""
         eta_str = f"eta: {eta_string}" if eta_string else ""
         self.logger.info(
             f" {epoch_str}{iter_str}{loss_str} {time_str}{data_time_str}lr: {lr} {memory_str}{eta_str}")

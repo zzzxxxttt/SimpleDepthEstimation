@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This is an unified codebase for NN-based monocular depth estimation, the framework is based on [detectron2](https://github.com/facebookresearch/detectron2) (with a lot of modifications) and supports both supervised and self-supervised monocular depth estimation methods. The main goal for developing this repository is to help understand popular depth estimation papers, I tried my best to keep the code simple.
+This is a unified codebase for NN-based monocular depth estimation, the framework is based on [detectron2](https://github.com/facebookresearch/detectron2) (with a lot of modifications) and supports both supervised and self-supervised monocular depth estimation methods. The main goal for developing this repository is to help understand popular depth estimation papers, I tried my best to keep the code simple.
 
 
 ## Environment:

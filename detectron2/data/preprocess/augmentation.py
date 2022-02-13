@@ -1,7 +1,10 @@
 import cv2
 import random
 import numpy as np
+
+import torch
 import torchvision.transforms as transforms
+import torchvision.transforms.functional as F
 
 from PIL import Image
 
@@ -197,8 +200,37 @@ class RandomImageAug(Preprocess):
     def __init__(self, cfg):
         super(RandomImageAug, self).__init__(cfg)
         self.jitter_prob = cfg.get('JITTER_PROB', 1.0)
-        self.jitter_params = cfg.get('JITTER_PARAMS', (0.2, 0.2, 0.2, 0.05))
-        self.color_aug = transforms.ColorJitter(*self.jitter_params)
+        jitter_params = cfg.get('JITTER_PARAMS', (0.2, 0.2, 0.2, 0.05))
+        self.brightness = [max(1 - float(jitter_params[0]), 0.0), 1 + float(jitter_params[0])]
+        self.contrast = [max(1 - float(jitter_params[1]), 0.0), 1 + float(jitter_params[1])]
+        self.saturation = [max(1 - float(jitter_params[2]), 0.0), 1 + float(jitter_params[2])]
+        self.hue = [-float(jitter_params[3]), float(jitter_params[3])]
+
+        self.fn_idx = None
+        self.b = None
+        self.c = None
+        self.s = None
+        self.h = None
+        self.get_params()
+
+    def get_params(self):
+        self.fn_idx = torch.randperm(4)
+        self.b = float(torch.empty(1).uniform_(self.brightness[0], self.brightness[1]))
+        self.c = float(torch.empty(1).uniform_(self.contrast[0], self.contrast[1]))
+        self.s = float(torch.empty(1).uniform_(self.saturation[0], self.saturation[1]))
+        self.h = float(torch.empty(1).uniform_(self.hue[0], self.hue[1]))
+
+    def augment(self, img):
+        for fn_id in self.fn_idx:
+            if fn_id == 0:
+                img = F.adjust_brightness(img, self.b)
+            elif fn_id == 1:
+                img = F.adjust_contrast(img, self.c)
+            elif fn_id == 2:
+                img = F.adjust_saturation(img, self.s)
+            elif fn_id == 3:
+                img = F.adjust_hue(img, self.h)
+        return img
 
     def forward(self, data_dict):
         data_dict['img_orig'] = data_dict['img'].copy()
@@ -207,11 +239,13 @@ class RandomImageAug(Preprocess):
             data_dict['ctx_img_orig'] = [img.copy() for img in data_dict['ctx_img']]
 
         if random.random() < self.jitter_prob:
-            data_dict['img'] = np.array(self.color_aug(Image.fromarray(data_dict['img'])))
+            self.get_params()
+
+            data_dict['img'] = np.array(self.augment(Image.fromarray(data_dict['img'])))
 
             # Jitter context
             if 'ctx_img' in data_dict:
-                data_dict['ctx_img'] = [np.array(self.color_aug(Image.fromarray(cxt)))
+                data_dict['ctx_img'] = [np.array(self.augment(Image.fromarray(cxt)))
                                         for cxt in data_dict['ctx_img']]
 
         # Return jittered (?) sample
