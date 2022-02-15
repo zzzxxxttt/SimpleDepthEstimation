@@ -3,8 +3,24 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .build import POSE_NET_REGISTRY
-from .PoseNet import conv_gn
+# from .PoseNet import conv_gn_relu
 from ...geometry.pose_utils import pose_vec2mat
+from detectron2.layers.conv_tf import Conv2dTF
+
+
+def conv_gn_relu(in_planes, out_planes, kernel_size=3, stride=2, group_norm=True):
+    layers = [
+        # Conv2dTF(in_planes, out_planes, kernel_size=kernel_size, stride=stride),
+        nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size, padding=(kernel_size - 1) // 2, stride=stride),
+        nn.ReLU(inplace=True)
+    ]
+    if group_norm:
+        layers.insert(1, nn.GroupNorm(16, out_planes))
+    return nn.Sequential(*layers)
+
+
+# conv2d = Conv2dTF
+conv2d = nn.Conv2d
 
 
 @POSE_NET_REGISTRY.register()
@@ -18,13 +34,13 @@ class GooglePoseNet(nn.Module):
 
         in_channels = 4 * 2 if cfg.MODEL.POSE_NET.USE_DEPTH else 3 * 2
         channels = [16, 32, 64, 128, 256, 256, 256]
-        self.conv1 = conv_gn(in_channels, channels[0], kernel_size=7, group_norm=group_norm)
-        self.conv2 = conv_gn(channels[0], channels[1], kernel_size=5, group_norm=group_norm)
-        self.conv3 = conv_gn(channels[1], channels[2], group_norm=group_norm)
-        self.conv4 = conv_gn(channels[2], channels[3], group_norm=group_norm)
-        self.conv5 = conv_gn(channels[3], channels[4], group_norm=group_norm)
-        self.conv6 = conv_gn(channels[4], channels[5], group_norm=group_norm)
-        self.conv7 = conv_gn(channels[5], channels[6], group_norm=group_norm)
+        self.conv1 = conv_gn_relu(in_channels, channels[0], kernel_size=7, group_norm=group_norm)
+        self.conv2 = conv_gn_relu(channels[0], channels[1], kernel_size=5, group_norm=group_norm)
+        self.conv3 = conv_gn_relu(channels[1], channels[2], group_norm=group_norm)
+        self.conv4 = conv_gn_relu(channels[2], channels[3], group_norm=group_norm)
+        self.conv5 = conv_gn_relu(channels[3], channels[4], group_norm=group_norm)
+        self.conv6 = conv_gn_relu(channels[4], channels[5], group_norm=group_norm)
+        self.conv7 = conv_gn_relu(channels[5], channels[6], group_norm=group_norm)
 
         self.pose_pred = nn.Conv2d(channels[6], 6, kernel_size=1, padding=0)
 
@@ -42,6 +58,8 @@ class GooglePoseNet(nn.Module):
                     m.bias.data.zero_()
 
     def forward(self, batch):
+        B = batch['pose_net_input'].shape[0]
+
         out_conv1 = self.conv1(batch['pose_net_input'])
         out_conv2 = self.conv2(out_conv1)
         out_conv3 = self.conv3(out_conv2)
@@ -50,7 +68,7 @@ class GooglePoseNet(nn.Module):
         out_conv6 = self.conv6(out_conv5)
         out_conv7 = self.conv7(out_conv6)
 
-        pose = self.pose_pred(out_conv7.mean([2, 3], keepdim=True)).view(batch['pose_net_input'].shape[0], 6)
+        pose = self.pose_pred(out_conv7.mean([2, 3], keepdim=True)).view(B, 6)
         trans, rot = pose[:, :3], pose[:, 3:]
 
         if self.learn_scale:
@@ -65,14 +83,15 @@ class GooglePoseNet(nn.Module):
 
 
 class MotionRefiner(nn.Module):
-    def __init__(self, trans_channel, skip_channel, group_norm):
+    def __init__(self, channel_out, channel_mid, group_norm):
         super().__init__()
-        self.conv1 = conv_gn(trans_channel + skip_channel, skip_channel,
-                             kernel_size=3, group_norm=group_norm, stride=1)
-        self.conv21 = conv_gn(trans_channel + skip_channel, skip_channel,
-                              kernel_size=3, group_norm=group_norm, stride=1)
-        self.conv22 = conv_gn(skip_channel, skip_channel, kernel_size=3, group_norm=group_norm, stride=1)
-        self.conv3 = conv_gn(skip_channel * 2, trans_channel, kernel_size=1, group_norm=group_norm, stride=1)
+        self.conv1 = conv_gn_relu(channel_out + channel_mid, channel_mid,
+                                  kernel_size=3, group_norm=group_norm, stride=1)
+        self.conv21 = conv_gn_relu(channel_out + channel_mid, channel_mid,
+                                   kernel_size=3, group_norm=group_norm, stride=1)
+        self.conv22 = conv_gn_relu(channel_mid, channel_mid,
+                                   kernel_size=3, group_norm=group_norm, stride=1)
+        self.conv3 = conv2d(channel_mid * 2, channel_out, kernel_size=1, bias=False)
 
     def forward(self, trans, trans_skip):
         upsampled_trans = F.interpolate(trans, size=trans_skip.shape[-2:], mode='bilinear', align_corners=True)
@@ -94,40 +113,39 @@ class GoogleMotionNet(nn.Module):
         self.motion_weight = 1.0
 
         in_channels = 4 * 2 if cfg.MODEL.POSE_NET.USE_DEPTH else 3 * 2
-        channels = [16, 32, 64, 128, 256, 256, 256]
-        self.conv1 = conv_gn(in_channels, channels[0], kernel_size=7, group_norm=group_norm)
-        self.conv2 = conv_gn(channels[0], channels[1], kernel_size=5, group_norm=group_norm)
-        self.conv3 = conv_gn(channels[1], channels[2], group_norm=group_norm)
-        self.conv4 = conv_gn(channels[2], channels[3], group_norm=group_norm)
-        self.conv5 = conv_gn(channels[3], channels[4], group_norm=group_norm)
-        self.conv6 = conv_gn(channels[4], channels[5], group_norm=group_norm)
-        self.conv7 = conv_gn(channels[5], channels[6], group_norm=group_norm)
+        channels = [16, 32, 64, 128, 256, 512, 1024]
+        self.conv1 = conv_gn_relu(in_channels, channels[0], group_norm=group_norm)
+        self.conv2 = conv_gn_relu(channels[0], channels[1], group_norm=group_norm)
+        self.conv3 = conv_gn_relu(channels[1], channels[2], group_norm=group_norm)
+        self.conv4 = conv_gn_relu(channels[2], channels[3], group_norm=group_norm)
+        self.conv5 = conv_gn_relu(channels[3], channels[4], group_norm=group_norm)
+        self.conv6 = conv_gn_relu(channels[4], channels[5], group_norm=group_norm)
+        self.conv7 = conv_gn_relu(channels[5], channels[6], group_norm=group_norm)
 
-        self.pose_pred = nn.Conv2d(channels[6], 6, kernel_size=1, padding=0)
+        self.pose_pred = conv2d(channels[6], 6, kernel_size=1, bias=False)
 
-        self.conv8 = conv_gn(3, 3, kernel_size=1, group_norm=group_norm)
+        self.conv8 = conv2d(6, 3, kernel_size=1)
 
-        self.refiner7 = MotionRefiner(trans_channel=3, skip_channel=channels[6], group_norm=group_norm)
-        self.refiner6 = MotionRefiner(trans_channel=3, skip_channel=channels[5], group_norm=group_norm)
-        self.refiner5 = MotionRefiner(trans_channel=3, skip_channel=channels[4], group_norm=group_norm)
-        self.refiner4 = MotionRefiner(trans_channel=3, skip_channel=channels[3], group_norm=group_norm)
-        self.refiner3 = MotionRefiner(trans_channel=3, skip_channel=channels[2], group_norm=group_norm)
-        self.refiner2 = MotionRefiner(trans_channel=3, skip_channel=channels[1], group_norm=group_norm)
-        self.refiner1 = MotionRefiner(trans_channel=3, skip_channel=channels[0], group_norm=group_norm)
-        self.refiner0 = MotionRefiner(trans_channel=3, skip_channel=in_channels, group_norm=group_norm)
+        self.refiner7 = MotionRefiner(channel_out=3, channel_mid=channels[6], group_norm=group_norm)
+        self.refiner6 = MotionRefiner(channel_out=3, channel_mid=channels[5], group_norm=group_norm)
+        self.refiner5 = MotionRefiner(channel_out=3, channel_mid=channels[4], group_norm=group_norm)
+        self.refiner4 = MotionRefiner(channel_out=3, channel_mid=channels[3], group_norm=group_norm)
+        self.refiner3 = MotionRefiner(channel_out=3, channel_mid=channels[2], group_norm=group_norm)
+        self.refiner2 = MotionRefiner(channel_out=3, channel_mid=channels[1], group_norm=group_norm)
+        self.refiner1 = MotionRefiner(channel_out=3, channel_mid=channels[0], group_norm=group_norm)
+        self.refiner0 = MotionRefiner(channel_out=3, channel_mid=in_channels, group_norm=False)
 
         if self.learn_scale:
             self.register_parameter('rot_scale', nn.Parameter(torch.tensor(0.01)))
             self.register_parameter('trans_scale', nn.Parameter(torch.tensor(0.01)))
 
-        self.init_weights()
+        self.apply(self.init_weights)
 
-    def init_weights(self):
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
-                nn.init.xavier_uniform_(m.weight.data)
-                if m.bias is not None:
-                    m.bias.data.zero_()
+    def init_weights(self, m):
+        if isinstance(m, nn.Conv2d):
+            nn.init.xavier_uniform_(m.weight.data)
+            if m.bias is not None:
+                m.bias.data.zero_()
 
     def forward(self, batch):
         out_conv1 = self.conv1(batch['pose_net_input'])
@@ -139,9 +157,9 @@ class GoogleMotionNet(nn.Module):
         out_conv7 = self.conv7(out_conv6)
 
         pose = self.pose_pred(out_conv7.mean([2, 3], keepdim=True))
-        trans, rot = pose[:, :3, :, :], pose[:, 3:, :, :]
+        rot, trans = pose[:, :3, :, :], pose[:, 3:, :, :]
 
-        residual_motion = self.conv8(trans)
+        residual_motion = self.conv8(pose)
         residual_motion = self.refiner7(residual_motion, out_conv7)
         residual_motion = self.refiner6(residual_motion, out_conv6)
         residual_motion = self.refiner5(residual_motion, out_conv5)
@@ -166,7 +184,6 @@ class GoogleMotionNet(nn.Module):
             # A mask of shape [B, h, w, 1]
             residual_motion *= (sq_residual_motion > mean_sq_residual_motion).float()
 
-        batch['pose_pred'] = pose
+        batch['pose_pred'] = pose_vec2mat(pose)
         batch['motion_pred'] = residual_motion * self.motion_weight
-
         return batch

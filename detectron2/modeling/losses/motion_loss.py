@@ -25,21 +25,21 @@ def motion_consistency_loss(coords_A_in_B, mask, R_A2B, R_B2A, t_A2B, t_B2A):
     R2t1 = R_B2A[:, None, :, :] @ t_A2B.view(B, 3, 1, -1).permute(0, 3, 1, 2)  # [B, HxW, 3, 1]
 
     rot_unit = R2R1
-    trans_zero = R2t1[..., 0] + sampled_t_B2A.view(B, -1, 3)
+    trans_zero = R2t1[..., 0] + sampled_t_B2A.view(B, 3, -1).permute(0, 2, 1)
 
     eyes = torch.eye(3, device=coords_A_in_B.device)[None, :, :].repeat(B, 1, 1)
 
     rot_error = ((rot_unit - eyes) ** 2).mean(dim=[1, 2])
     rot1_scale = ((R_A2B - eyes) ** 2).mean(dim=[1, 2])
     rot2_scale = ((R_B2A - eyes) ** 2).mean(dim=[1, 2])
-    rot_error = (rot_error / (rot1_scale + rot2_scale + 1e-5)).mean()
+    rot_error = (rot_error / (rot1_scale + rot2_scale + 1e-24)).mean()
 
     # Here again, we normalize by the magnitudes, for the same reason.
     trans_error = (trans_zero ** 2).sum(2).view(B, H, W)
     trans1_scale = (t_A2B ** 2).sum(1)
     trans2_scale = (sampled_t_B2A ** 2).sum(1)
 
-    trans_error = trans_error / (trans1_scale + trans2_scale + 1e-5)
+    trans_error = trans_error / (trans1_scale + trans2_scale + 1e-24)
     trans_error = (mask[:, 0, :, :] * trans_error).mean()
 
     return rot_error, trans_error
@@ -49,7 +49,7 @@ def motion_smoothness_loss_fn(motion_field, warp_around=False):
     motion_gradients_x = gradient_x(motion_field)[:, :, :-1, :]
     motion_gradients_y = gradient_y(motion_field)[:, :, :, :-1]
 
-    return torch.sqrt(1e-5 + motion_gradients_x ** 2 + motion_gradients_y ** 2).mean()
+    return torch.sqrt(1e-24 + motion_gradients_x ** 2 + motion_gradients_y ** 2).mean()
 
 
 def motion_sparsity_loss_fn(motion_map):

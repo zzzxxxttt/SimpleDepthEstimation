@@ -1,0 +1,18 @@
+_BASE_: "./Base.yaml"
+
+MODEL:
+  DEPTH_NET:
+    NAME: "GoogleResNet"
+    ENCODER_NAME: "18pt"
+    UPSAMPLE_DEPTH: False
+    LEARN_SCALE: False
+    NORM: 'None'
+    NOISE_STDDEV: 0.2
+    RAMPUP_ITERS: 10000
+SOLVER:
+  IMS_PER_BATCH: 16
+  LR_STEPS: (30,40)
+  GAMMA: 0.5
+  MAX_EPOCHS: 50
+DATALOADER:
+  NUM_WORKERS: 8

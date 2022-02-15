@@ -2,12 +2,11 @@ import numpy as np
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 
-class LayerNorm(nn.Module):
+class RandLayerNorm(nn.Module):
     def __init__(self, num_channels, eps=1e-3, elementwise_affine=True):
-        super(LayerNorm, self).__init__()
+        super(RandLayerNorm, self).__init__()
         self.eps = eps
         self.stddev = 0.5
         self.elementwise_affine = elementwise_affine
@@ -27,15 +26,15 @@ class LayerNorm(nn.Module):
     def forward(self, input):
         var, mean = torch.var_mean(input, dim=[2, 3], keepdim=True)
         if self.training:
-            mean *= np.clip(1.0 + np.random.normal(loc=0.0, scale=self.stddev), a_min=0.0, a_max=None)
-            var *= np.clip(1.0 + np.random.normal(loc=0.0, scale=self.stddev), a_min=0.0, a_max=None)
+            mean *= 1.0 + torch.fmod(torch.randn_like(mean) * self.stddev, self.stddev * 2)
+            var *= 1.0 + torch.fmod(torch.randn_like(var) * self.stddev, self.stddev * 2)
         out = (input - mean.detach()) / (var.detach() + self.eps)
         out = self.weight.view(1, -1, 1, 1) * out + self.bias.view(1, -1, 1, 1)
         return out
 
 
 if __name__ == '__main__':
-    norm = LayerNorm(num_channels=32)
+    norm = RandLayerNorm(num_channels=32)
 
     input = torch.randn(3, 32, 16, 16)
     out1 = norm(input)
