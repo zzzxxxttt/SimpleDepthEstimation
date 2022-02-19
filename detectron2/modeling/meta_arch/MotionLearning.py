@@ -58,6 +58,8 @@ class MotionLearningModel(nn.Module):
 
         self.pose_use_depth = cfg.MODEL.POSE_NET.USE_DEPTH
 
+        self.return_loss = cfg.MODEL.get('RETURN_LOSS', False)
+
         self.register_buffer("pixel_mean", torch.Tensor(cfg.MODEL.PIXEL_MEAN).view(1, -1, 1, 1))
         self.register_buffer("pixel_std", torch.Tensor(cfg.MODEL.PIXEL_STD).view(1, -1, 1, 1))
 
@@ -66,11 +68,10 @@ class MotionLearningModel(nn.Module):
         return self.pixel_mean.device
 
     def forward(self, batch):
-        output = {}
 
         batch = to_cuda(batch, self.device)
 
-        if self.training:
+        if self.training or self.return_loss:
             # currently only support two frames
             frame1 = batch["img"]
             frame2 = batch["ctx_img"][0]
@@ -100,22 +101,7 @@ class MotionLearningModel(nn.Module):
             if 'motion_pred' in batch:
                 motion_1to2, motion_2to1 = torch.chunk(batch['motion_pred'], 2, dim=0)
 
-            # todo calculate mean for each scale
-            if self.scale_normalize:
-                depth_mean = torch.mean(torch.cat([depth1[0], depth2[0]], 0))
-                # normalize depth
-                depth1_normalized = [d / depth_mean for d in depth1]
-                depth2_normalized = [d / depth_mean for d in depth2]
-                # normalize translation
-                pose_1to2[:, :3, 3] /= depth_mean
-                pose_2to1[:, :3, 3] /= depth_mean
-                if 'motion_pred' in batch:
-                    motion_1to2 /= depth_mean
-                    motion_2to1 /= depth_mean
-            else:
-                depth1_normalized = depth1
-                depth2_normalized = depth2
-
+            batch['depth_proximity_weight'] = []
             losses = defaultdict(lambda: 0)
             for i in reversed(range(self.num_scales)):
                 scale_w = 1.0 / 2 ** i
@@ -128,7 +114,6 @@ class MotionLearningModel(nn.Module):
                 resized_intrinsics = scale_intrinsics(batch['intrinsics'].clone(),
                                                       x_scale=scale_w, y_scale=scale_w)
 
-                # todo scale depth by avgpool
                 resized_depth1 = resize_img_avgpool(depth1[0], dst_size=(H, W))
                 resized_depth2 = resize_img_avgpool(depth2[0], dst_size=(H, W))
 
@@ -151,19 +136,37 @@ class MotionLearningModel(nn.Module):
                     t_1to2 = t_1to2.expand(-1, -1, H, W)
                     t_2to1 = t_2to1.expand(-1, -1, H, W)
 
+                if self.scale_normalize:
+                    depth_mean = torch.mean(torch.cat([resized_depth1, resized_depth2], 0))
+                    # normalize depth
+                    depth1_normalized = resized_depth1 / depth_mean
+                    depth2_normalized = resized_depth2 / depth_mean
+                    # normalize translation
+                    t_1to2 = t_1to2 / depth_mean
+                    t_2to1 = t_2to1 / depth_mean
+                    if 'motion_pred' in batch:
+                        resized_motion_1to2 = resized_motion_1to2 / depth_mean
+                        resized_motion_2to1 = resized_motion_2to1 / depth_mean
+                else:
+                    depth1_normalized = resized_depth1
+                    depth2_normalized = resized_depth2
+
                 output_1_to_2 = self.rgbd_consistency_loss(resized_frame1, resized_frame2,
-                                                           resized_depth1, resized_depth2,
+                                                           depth1_normalized, depth2_normalized,
                                                            resized_intrinsics,
                                                            R_1to2, t_1to2)
 
                 losses = merge_loss(losses, output_1_to_2, scale_w)
 
                 output_2_to_1 = self.rgbd_consistency_loss(resized_frame2, resized_frame1,
-                                                           resized_depth2, resized_depth1,
+                                                           depth2_normalized, depth1_normalized,
                                                            resized_intrinsics,
                                                            R_2to1, t_2to1)
 
                 losses = merge_loss(losses, output_2_to_1, scale_w)
+
+                batch['depth_proximity_weight'].append((output_1_to_2['depth_proximity_weight'],
+                                                        output_2_to_1['depth_proximity_weight']))
 
                 if self.rot_cycle_loss_w > 0 or self.trans_cycle_loss_w > 0:
                     rot_loss, trans_loss = motion_consistency_loss(output_1_to_2['coords_A_in_B'],
@@ -210,21 +213,20 @@ class MotionLearningModel(nn.Module):
 
                 if self.smooth_loss_w > 0.0:
                     losses['smooth_loss'] += \
-                        smoothness_loss(resized_depth1, resized_frame1) * scale_w * self.smooth_loss_w
+                        smoothness_loss(depth1_normalized, resized_frame1) * scale_w * self.smooth_loss_w
                     losses['smooth_loss'] += \
-                        smoothness_loss(resized_depth2, resized_frame2) * scale_w * self.smooth_loss_w
+                        smoothness_loss(depth2_normalized, resized_frame2) * scale_w * self.smooth_loss_w
 
                 if self.var_loss_w > 0.0:
                     losses['var_loss'] += variance_loss(resized_depth1) * scale_w * self.var_loss_w
                     losses['var_loss'] += variance_loss(resized_depth2) * scale_w * self.var_loss_w
 
-            output.update(losses)
+            batch.update(losses)
 
         else:
             batch['depth_net_input'] = (batch["img"] - self.pixel_mean) / self.pixel_std
             batch = self.depth_net(batch)
-            output['depth_pred'] = batch['depth_pred'][0]
-        return output
+        return batch
 
     def rgbd_consistency_loss(self, frame_A, frame_B, depth_A, depth_B, intrinsics, R_A2B, t_A2B):
 
@@ -249,7 +251,7 @@ class MotionLearningModel(nn.Module):
             return_dict['depth_l1_loss'] = (depth_l1_loss.sum([1, 2, 3]) / normalizer).mean() * self.depth_l1_loss_w
 
         rgb_l1_loss = torch.abs(sampled_frame_B - frame_A) * occlusion_mask
-        # return_dict['rgb_l1_loss'] = rgb_l1_loss.sum([1, 2, 3]) / normalizer).mean() # todo test this
+        # return_dict['rgb_l1_loss'] = (rgb_l1_loss.sum([1, 2, 3]) / normalizer).mean()  # todo test this
         return_dict['rgb_l1_loss'] = rgb_l1_loss.mean()
 
         # SSIM loss
@@ -266,6 +268,7 @@ class MotionLearningModel(nn.Module):
             rgb_ssim_loss, avg_weight = self.ssim(sampled_frame_B, frame_A, depth_proximity_weight)
             rgb_ssim_loss = (rgb_ssim_loss * avg_weight).mean()
 
+            return_dict['depth_proximity_weight'] = depth_proximity_weight
             return_dict['ssim_loss'] = rgb_ssim_loss * self.ssim_loss_w * 0.5
 
         return return_dict
