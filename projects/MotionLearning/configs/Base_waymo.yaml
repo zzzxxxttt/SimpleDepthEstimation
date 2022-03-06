@@ -26,29 +26,34 @@ LOSS:
   SCALE_NORMALIZE: False
 DATASETS:
   TRAIN:
-    NAME: "KittiDepthV2"
-    DATA_ROOT: "/data2/data/kitti/kitti_raw"
-    DEPTH_ROOT: "/data2/data/kitti/kitti_depth_groundtruth"
-    SPLIT: "/data2/data/kitti/splits/eigen_train_files.txt"
-    DEPTH_TYPE: "none"
+    NAME: "WaymoDepth"
+    DATA_ROOT: "/data2/data/waymo/training/image"
+    DEPTH_ROOT: "/data2/data/waymo/training/depth"
+    SPLIT: "/data2/data/waymo/infos/training_infos.pkl"
+    USE_CAM: ['FRONT']
+    WITH_DEPTH: False
     WITH_POSE: False
     BACKWARD_CONTEXT: 1
     STRIDE: 1
     PREPROCESS:
       - NAME: LoadImg
         WITH_CTX: true
+      - NAME: CropTopTo
+        IMG_H: 768
       - NAME: Resize
-        IMG_W: 416
+        IMG_W: 320
         IMG_H: 128
       - NAME: RandomFlip
       - NAME: RandomImageAug
       - NAME: ToTensor
   TEST:
-    NAME: "KittiDepthV2"
-    DATA_ROOT: "/data2/data/kitti/kitti_raw"
-    DEPTH_ROOT: "/data2/data/kitti/kitti_depth_refined"
-    SPLIT: "/data2/data/kitti/splits/eigen_test_files.txt"
-    DEPTH_TYPE: "refined"
+    NAME: "WaymoDepth"
+    DATA_ROOT: "/data2/data/waymo/validation/image"
+    DEPTH_ROOT: "/data2/data/waymo/validation/depth"
+    SPLIT: "/data2/data/waymo/infos/validation_infos.pkl"
+    USE_CAM: ['FRONT']
+    DOWNSAMPLE: 20
+    WITH_DEPTH: False
     WITH_POSE: False
     PREPROCESS:
       - NAME: LoadImg
@@ -56,8 +61,10 @@ DATASETS:
         KEEP_ORIG: true
       - NAME: ClipDepth
         MAX_DEPTH: *max_depth
+      - NAME: CropTopTo
+        IMG_H: 768
       - NAME: Resize
-        IMG_W: 416
+        IMG_W: 320
         IMG_H: 128
       - NAME: ToTensor
 
@@ -68,7 +75,7 @@ SOLVER:
   LR_STEPS: (8,16)
   GAMMA: 0.5
   MAX_EPOCHS: 20
-  CHECKPOINT_PERIOD: 10
+  CHECKPOINT_PERIOD: 1
   CLIP_GRAD: 10
 EVALUATORS: (
   "kitti_evaluator",

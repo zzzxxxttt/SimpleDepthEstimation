@@ -20,7 +20,7 @@ class KittiDepthV2(DatasetBase):
         self.depth_root = dataset_cfg.DEPTH_ROOT
         self.split_file = dataset_cfg.SPLIT
 
-        self.depth_type = dataset_cfg.DEPTH_TYPE
+        self.depth_type = dataset_cfg.get('DEPTH_TYPE', 'none')
         self.with_depth = self.depth_type != 'none'
 
         self.forward_context = dataset_cfg.get('FORWARD_CONTEXT', 0)
@@ -88,7 +88,8 @@ class KittiDepthV2(DatasetBase):
 
         date, drive, img_id = self.metadatas[idx]
 
-        data = {'metadata': {'date': date,
+        data = {'metadata': {'idx': idx,
+                             'date': date,
                              'drive': drive,
                              'img_id': img_id,
                              'img_dir': self._get_img_dir(date, drive, img_id),

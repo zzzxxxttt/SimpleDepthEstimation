@@ -14,7 +14,7 @@ This is a unified codebase for NN-based monocular depth estimation, the framewor
    ```
 2. create a new conda environment and activate it
    ```bash
-   conda create -n sde python=3.6 
+   conda create -n sde python=3.7 
    conda activate sde
    ```
 3. install torch==1.8.0 and torchvision==0.9.0 follow the [official instructions](https://pytorch.org/). (I haven't tried other pytorch versions)
@@ -22,6 +22,7 @@ This is a unified codebase for NN-based monocular depth estimation, the framewor
    ```bash
    pip install -r requirements.txt
    ```
+5. to use waymo dataset, compile waymo-open-dataset according to the [official instructions](https://github.com/waymo-research/waymo-open-dataset/blob/master/docs/quick_start.md).
 
 
 ## Data preparation

@@ -1,0 +1,77 @@
+MODEL:
+  META_ARCHITECTURE: "MonoDepth2Model"
+  MAX_DEPTH: &max_depth 80
+LOSS:
+  SSIM_WEIGHT: 0.85
+  C1: 0.0001
+  C2: 0.0009
+  CLIP: 0.0
+  AUTOMASK: True
+  SMOOTHNESS_WEIGHT: 0.001
+  PHOTOMETRIC_REDUCE: 'min'
+  SUPERVISED_WEIGHT: 0.0
+  VARIANCE_FOCUS: 0.85
+  VAR_LOSS_WEIGHT: 0.0000
+DATASETS:
+  TRAIN:
+    NAME: "WaymoDepth"
+    DATA_ROOT: "/data2/data/waymo/training/image"
+    DEPTH_ROOT: "/data2/data/waymo/training/depth"
+    SPLIT: "/data2/data/waymo/infos/training_infos.pkl"
+    USE_CAM: ['FRONT']
+    DOWNSAMPLE: 2
+    WITH_DEPTH: False
+    WITH_POSE: False
+    FORWARD_CONTEXT: 1
+    BACKWARD_CONTEXT: 1
+    STRIDE: 1
+    PREPROCESS:
+      - NAME: LoadImg
+        WITH_CTX: true
+      - NAME: CropTopTo
+        IMG_H: 768
+      - NAME: Resize
+        IMG_W: 480
+        IMG_H: 192
+      - NAME: RandomFlip
+      - NAME: RandomImageAug
+      - NAME: ToTensor
+  TEST:
+    NAME: "WaymoDepth"
+    DATA_ROOT: "/data2/data/waymo/validation/image"
+    DEPTH_ROOT: "/data2/data/waymo/validation/depth"
+    SPLIT: "/data2/data/waymo/infos/validation_infos.pkl"
+    USE_CAM: ['FRONT']
+    DOWNSAMPLE: 20
+    WITH_DEPTH: False
+    WITH_POSE: False
+    PREPROCESS:
+      - NAME: LoadImg
+      - NAME: LoadDepth
+        KEEP_ORIG: true
+      - NAME: ClipDepth
+        MAX_DEPTH: *max_depth
+      - NAME: CropTopTo
+        IMG_H: 768
+      - NAME: Resize
+        IMG_W: 480
+        IMG_H: 192
+      - NAME: ToTensor
+SOLVER:
+  IMS_PER_BATCH: 16
+  DEPTH_LR: 0.0002
+  POSE_LR: 0.0002
+  LR_STEPS: (40,)
+  GAMMA: 0.1
+  MAX_EPOCHS: 50
+  CHECKPOINT_PERIOD: 1
+EVALUATORS: (
+  "kitti_evaluator",
+  "kitti_evaluator_0_30",
+  "kitti_evaluator_30_50",
+  "kitti_evaluator_50_80"
+  )
+TEST:
+  GT_SCALE: True
+VERSION: 2
+LOG_PERIOD: 20

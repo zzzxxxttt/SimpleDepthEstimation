@@ -69,6 +69,46 @@ class KBCrop(Preprocess):
 
 
 @PREPROCESS_REGISTRY.register()
+class CropTopTo(Preprocess):
+    def __init__(self, cfg):
+        super(CropTopTo, self).__init__(cfg)
+        self.height = cfg.IMG_H
+
+    def forward(self, data_dict):
+        img_h, img_w = data_dict['img'].shape[:2]
+
+        y_start = int(img_h - self.height)
+
+        data_dict['img'] = data_dict['img'][y_start:]
+
+        if 'intrinsics' in data_dict:
+            data_dict['intrinsics'][1, 2] -= y_start
+
+        if 'depth' in data_dict:
+            data_dict['depth'] = data_dict['depth'][y_start:]
+
+        if 'ctx_img' in data_dict:
+            data_dict['ctx_img'] = [img[y_start:] for img in data_dict['ctx_img']]
+
+        if 'ctx_depth' in data_dict:
+            data_dict['ctx_depth'] = [depth[y_start:] for depth in data_dict['ctx_depth']]
+
+        data_dict['metadata']['crop_y_start'] = y_start
+        data_dict['metadata']['h_before_crop'] = img_h
+        data_dict['metadata']['w_before_crop'] = img_w
+        return data_dict
+
+    def backward(self, data_dict):
+        depth_pred = data_dict['depth_pred']
+        y_start = data_dict['metadata']['crop_y_start']
+        img_h, img_w = data_dict['metadata']['h_before_crop'], data_dict['metadata']['w_before_crop']
+        uncropped = np.zeros((img_h, img_w), dtype=np.float32)
+        uncropped[y_start:] = depth_pred
+        data_dict['depth_pred'] = uncropped
+        return data_dict
+
+
+@PREPROCESS_REGISTRY.register()
 class Resize(Preprocess):
     def __init__(self, cfg):
         super(Resize, self).__init__(cfg)

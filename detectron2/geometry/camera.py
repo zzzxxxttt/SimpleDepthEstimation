@@ -8,13 +8,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .resampler import resampler_with_unstacked_warp
+
 
 def scale_intrinsics(K, x_scale, y_scale):
     """Scale intrinsics given x_scale and y_scale factors"""
     K[..., 0, 0] *= x_scale
     K[..., 1, 1] *= y_scale
-    K[..., 0, 2] = (K[..., 0, 2] + 0.5) * x_scale - 0.5
-    K[..., 1, 2] = (K[..., 1, 2] + 0.5) * y_scale - 0.5
+    # K[..., 0, 2] = (K[..., 0, 2] + 0.5) * x_scale - 0.5
+    # K[..., 1, 2] = (K[..., 1, 2] + 0.5) * y_scale - 0.5
+    K[..., 0, 2] *= x_scale
+    K[..., 1, 2] *= y_scale
     return K
 
 
@@ -147,23 +151,14 @@ def points_to_img(points, R, t):
     Y = proj[:, 1] / (proj[:, 2] + 1e-6)
     Z = proj[:, 2]
 
-    valid_proj_mask = (X >= 0) & (X < W) & \
-                      (Y >= 0) & (Y < H) & \
+    valid_proj_mask = X.isfinite() & (X >= 0) & (X < W - 1) & \
+                      Y.isfinite() & (Y >= 0) & (Y < H - 1) & \
                       (Z > 0)
 
-    Z = Z.clamp(min=1e-5)
-
-    Xnorm = 2 * X / (W - 1) - 1.
-    Ynorm = 2 * Y / (H - 1) - 1.
-
-    # Clamp out-of-bounds pixels
-    # Xmask = ((Xnorm > 1) + (Xnorm < -1)).detach()
-    # Xnorm[Xmask] = 2.
-    # Ymask = ((Ynorm > 1) + (Ynorm < -1)).detach()
-    # Ynorm[Ymask] = 2.
+    Z = torch.clamp(Z, min=1e-5)
 
     # Return pixel coordinates
-    return torch.stack([Xnorm, Ynorm], dim=-1).view(B, H, W, 2), \
+    return torch.stack([X, Y], dim=-1).view(B, H, W, 2), \
            Z.view(B, H, W, 1), \
            valid_proj_mask.view(B, H, W, 1)
 
@@ -184,9 +179,49 @@ def view_synthesis(image_B, depth_A, intrinsics, R_A_to_B, t_A_to_B):
 
     points_A_coords_in_B, points_A_depth_in_B, valid_proj_mask = points_to_img(points_A, R, t)
 
+    points_A_coords_in_B = points_A_coords_in_B.nan_to_num()
+
+    # points_A_coords_in_B[..., 0] = torch.clamp(points_A_coords_in_B[..., 0], 0, W - 1)
+    # points_A_coords_in_B[..., 1] = torch.clamp(points_A_coords_in_B[..., 1], 0, H - 1)
+
+    points_A_coords_in_B[..., 0] = 2 * points_A_coords_in_B[..., 0] / (W - 1) - 1.
+    points_A_coords_in_B[..., 1] = 2 * points_A_coords_in_B[..., 1] / (H - 1) - 1.
+
     # View-synthesis given the projected reference points
     sampled_B = F.grid_sample(image_B, points_A_coords_in_B,
                               mode='bilinear', padding_mode='zeros', align_corners=True)
+
+    return (sampled_B,
+            points_A_depth_in_B[:, None, :, :, 0],
+            points_A_coords_in_B,
+            valid_proj_mask[:, None, :, :, 0])
+
+
+def view_synthesis_v2(image_B, depth_A, intrinsics, R_A_to_B, t_A_to_B):
+    R = R_A_to_B.clone()  # [B, 3, 3]
+    t = t_A_to_B.clone()  # [B, 3, 1, 1] or [B, 3, H, W]
+    B, _, H, W = t.shape
+
+    # Reconstruct world points from target_camera
+    points_A = img_to_points(depth_A,
+                             R=inv_intrinsics(intrinsics),
+                             t=torch.zeros([image_B.shape[0], 3, 1], device=image_B.device))
+
+    # Project world points onto reference camera
+    R = intrinsics.bmm(R)
+    t = intrinsics.bmm(t.view(B, 3, H * W))
+
+    points_A_coords_in_B, points_A_depth_in_B, valid_proj_mask = points_to_img(points_A, R, t)
+
+    points_A_coords_in_B = points_A_coords_in_B.nan_to_num()
+    points_A_coords_in_B[..., 0] = torch.clamp(points_A_coords_in_B[..., 0], 0, W - 1)
+    points_A_coords_in_B[..., 1] = torch.clamp(points_A_coords_in_B[..., 1], 0, H - 1)
+
+    # View-synthesis given the projected reference points
+    sampled_B = resampler_with_unstacked_warp(image_B,
+                                              points_A_coords_in_B[..., 0],
+                                              points_A_coords_in_B[..., 1],
+                                              safe=False)
 
     return (sampled_B,
             points_A_depth_in_B[:, None, :, :, 0],

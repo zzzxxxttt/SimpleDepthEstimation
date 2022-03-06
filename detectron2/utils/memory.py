@@ -17,6 +17,8 @@ def to_cuda(data, device='cuda'):
         return torch.from_numpy(data).to(device)
     elif isinstance(data, list):
         return [to_cuda(d, device) for d in data]
+    elif isinstance(data, tuple):
+        return tuple(to_cuda(d, device) for d in data)
     elif isinstance(data, dict):
         return {k: to_cuda(v, device) for k, v in data.items()}
     else:
@@ -28,6 +30,8 @@ def to_numpy(data):
         return data.detach().cpu().numpy()
     elif isinstance(data, list):
         return [to_numpy(d) for d in data]
+    elif isinstance(data, tuple):
+        return tuple(to_numpy(d) for d in data)
     elif isinstance(data, dict):
         return {k: to_numpy(v) for k, v in data.items()}
     else:

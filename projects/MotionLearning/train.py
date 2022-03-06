@@ -66,14 +66,11 @@ def do_train(cfg, model, resume=False):
     data_loader = build_detection_train_loader(cfg)
     data_loader_test = build_detection_test_loader(cfg)
 
-    optimizer = torch.optim.Adam([{'name': 'Depth',
-                                   'params': model.module.depth_net.parameters(),
-                                   'lr': cfg.SOLVER.DEPTH_LR,
-                                   'weight_decay': 0.01},
-                                  {'name': 'Pose',
-                                   'params': model.module.pose_net.parameters(),
-                                   'lr': cfg.SOLVER.POSE_LR,
-                                   'weight_decay': 0.0}], )
+    optimizer = torch.optim.Adam([{'params': model.module.depth_net.parameters(),
+                                   'lr': cfg.SOLVER.DEPTH_LR},
+                                  {'params': model.module.pose_net.parameters(),
+                                   'lr': cfg.SOLVER.POSE_LR}],
+                                 weight_decay=0.0)
     # Training parameters
 
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
@@ -124,6 +121,19 @@ def do_train(cfg, model, resume=False):
                 losses_reduced = sum(loss for loss in loss_dict_reduced.values())
                 if comm.is_main_process():
                     storage.put_scalars(total_loss=losses_reduced, **loss_dict_reduced)
+                    if global_step % 199 == 0:
+                        storage.put_image(img_name='image', img_tensor=output['img'][0].detach())
+                        depth_pred = 1 / (output['depth_pred'][0][0].detach().cpu().numpy() + 0.1)
+                        storage.put_image_with_colormap(img_name='disparity',
+                                                        img_tensor=depth_pred,
+                                                        cmap='gray')
+                        storage.put_image_with_colormap(img_name='disparity_plasma',
+                                                        img_tensor=depth_pred,
+                                                        cmap='plasma')
+                        storage.put_image(img_name='proximity_weight',
+                                          img_tensor=output['depth_proximity_weight'][0][0][0].detach())
+                        storage.put_image(img_name='motion_field',
+                                          img_tensor=output['motion_pred'][0].detach())
 
                 optimizer.zero_grad()
                 losses.backward()
@@ -142,7 +152,7 @@ def do_train(cfg, model, resume=False):
             if cfg.TEST.EVAL_PERIOD > 0 and (epoch + 1) % cfg.TEST.EVAL_PERIOD == 0:
                 eval_results = do_test(cfg, model, data_loader_test)
                 for tag in eval_results:
-                    storage.put_scalars(**{f"{tag}/k": v for k, v in eval_results[tag].items()})
+                    storage.put_scalars(**{f"{tag}/{k}": v for k, v in eval_results[tag].items()})
 
                 # Compared to "train_net.py", the test results are not dumped to EventStorage
                 comm.synchronize()

@@ -7,6 +7,8 @@ import time
 from collections import defaultdict
 from contextlib import contextmanager
 from typing import Optional
+import numpy as np
+from matplotlib import cm
 import torch
 from fvcore.common.history_buffer import HistoryBuffer
 
@@ -305,6 +307,19 @@ class EventStorage:
                 The `img_tensor` will be visualized in tensorboard.
         """
         self._vis_data.append((img_name, img_tensor, self._iter))
+
+    def put_image_with_colormap(self, img_name, img_tensor, cmap, min_value=None, max_value=None):
+        img_tensor = img_tensor.squeeze()
+        assert img_tensor.ndim == 2
+        if min_value is None:
+            min_value = img_tensor.min()
+        if max_value is None:
+            max_value = img_tensor.max()
+        normalized_tensor = (img_tensor - min_value) / (max_value - min_value + 1e-12)
+        levels = (np.clip(normalized_tensor, 0.0, 1.0) * 255.0).astype(np.int)
+        colormap = cm.get_cmap(cmap)(range(256))[:, :3]  # Ignore the alpha
+        colormapped_image = colormap[levels.flatten()].reshape([levels.shape[0], levels.shape[1], 3])
+        self._vis_data.append((img_name, colormapped_image.transpose([2, 0, 1]), self._iter))
 
     def put_scalar(self, name, value, smoothing_hint=True):
         """

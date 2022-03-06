@@ -113,7 +113,7 @@ def do_train(cfg, model, resume=False):
             if cfg.TEST.EVAL_PERIOD > 0 and (epoch + 1) % cfg.TEST.EVAL_PERIOD == 0:
                 eval_results = do_test(cfg, model, data_loader_test)
                 for tag in eval_results:
-                    storage.put_scalars(**{f"{tag}/k": v for k, v in eval_results[tag].items()})
+                    storage.put_scalars(**{f"{tag}/{k}": v for k, v in eval_results[tag].items()})
 
                 # Compared to "train_net.py", the test results are not dumped to EventStorage
                 comm.synchronize()
