@@ -4,6 +4,10 @@
 
 This is a unified codebase for NN-based monocular depth estimation, the framework is based on [detectron2](https://github.com/facebookresearch/detectron2) (with a lot of modifications) and supports both supervised and self-supervised monocular depth estimation methods. The main goal for developing this repository is to help understand popular depth estimation papers, I tried my best to keep the code simple.
 
+## Updates
+
+### 2022-03-06
+* Add waymo dataset support 
 
 ## Environment:
 1. clone this repo
@@ -27,8 +31,17 @@ This is a unified codebase for NN-based monocular depth estimation, the framewor
 
 ## Data preparation
 ### KITTI:
-Download and extract [KITTI raw dataset](http://www.cvlibs.net/datasets/kitti/raw_data.php), [refined KITTI depth groundtruth](http://www.cvlibs.net/download.php?file=data_depth_annotated.zip), and [eigen split files](https://github.com/cleinc/bts/tree/master/train_test_inputs), then modify the data path in the config file.
+1. Download and extract [KITTI raw dataset](http://www.cvlibs.net/datasets/kitti/raw_data.php), [refined KITTI depth groundtruth](http://www.cvlibs.net/download.php?file=data_depth_annotated.zip), and [eigen split files](https://github.com/cleinc/bts/tree/master/train_test_inputs)
+2. Modify the data path in the config file
 
+### Waymo:
+1. Download [Waymo tfrecords](https://waymo.com/open/download/)
+2. Extract image and depth from tfrecords
+   ```bash
+   python tools/extract_waymo_data.py --src_dir path/to/tfrecords --dst_dir path/to/extracted/data --split training
+   python tools/extract_waymo_data.py --src_dir path/to/tfrecords --dst_dir path/to/extracted/data --split validation
+   ```
+3. Modify the data path in the config file
 
 ## Training 
 ```bash
@@ -72,7 +85,8 @@ python tools/demo.py --cfg path/to/config --input path/to/image --output path/to
 
 ## Reference
 - [detectron2](https://github.com/facebookresearch/detectron2)
-- [monodepth2](https://github.com/nianticlabs/monodepth2)
-- [bts](https://github.com/cleinc/bts)
-- [packnet-sfm](https://github.com/TRI-ML/packnet-sfm)
-- [motion-learning](https://github.com/google-research/google-research/tree/master/depth_and_motion_learning)
+- [Digging into Self-Supervised Monocular Depth Prediction](https://github.com/nianticlabs/monodepth2)
+- [From Big to Small: Multi-Scale Local Planar Guidance for Monocular Depth Estimation](https://github.com/cleinc/bts)
+- [3D Packing for Self-Supervised Monocular Depth Estimation](https://github.com/TRI-ML/packnet-sfm)
+- [Depth from Videos in the Wild: Unsupervised Monocular Depth Learning from Unknown Cameras](https://github.com/google-research/google-research/tree/master/depth_from_video_in_the_wild)
+- [Unsupervised Monocular Depth and Motion Learning](https://github.com/google-research/google-research/tree/master/depth_and_motion_learning)
