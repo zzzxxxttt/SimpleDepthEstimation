@@ -1,7 +1,7 @@
 import torch
 
 
-def gradient_x(image):
+def gradient_x(image, reversed=False):
     """
     Calculates the gradient of an image in the x dimension
     Parameters
@@ -14,10 +14,13 @@ def gradient_x(image):
     gradient_x : torch.Tensor [B,3,H,W-1]
         Gradient of image with respect to x
     """
-    return image[:, :, :, :-1] - image[:, :, :, 1:]
+    if reversed:
+        return image[:, :, :, 1:] - image[:, :, :, :-1]
+    else:
+        return image[:, :, :, :-1] - image[:, :, :, 1:]
 
 
-def gradient_y(image):
+def gradient_y(image, reversed=False):
     """
     Calculates the gradient of an image in the y dimension
     Parameters
@@ -30,10 +33,13 @@ def gradient_y(image):
     gradient_y : torch.Tensor [B,3,H-1,W]
         Gradient of image with respect to y
     """
-    return image[:, :, :-1, :] - image[:, :, 1:, :]
+    if reversed:
+        return image[:, :, 1:, :] - image[:, :, :-1, :]
+    else:
+        return image[:, :, :-1, :] - image[:, :, 1:, :]
 
 
-def smoothness_loss(depth, image):
+def smoothness_loss(depth, image, reversed=False):
     """
     Calculate smoothness values for inverse depths
 
@@ -58,11 +64,11 @@ def smoothness_loss(depth, image):
     mean_inv_depth = inv_depth.mean(2, True).mean(3, True)
     inv_depths_norm = inv_depth / mean_inv_depth.clamp(min=1e-6)
 
-    inv_depth_gradients_x = gradient_x(inv_depths_norm)
-    inv_depth_gradients_y = gradient_y(inv_depths_norm)
+    inv_depth_gradients_x = gradient_x(inv_depths_norm, reversed)
+    inv_depth_gradients_y = gradient_y(inv_depths_norm, reversed)
 
-    image_gradients_x = gradient_x(image)
-    image_gradients_y = gradient_y(image)
+    image_gradients_x = gradient_x(image, reversed)
+    image_gradients_y = gradient_y(image, reversed)
 
     weights_x = torch.exp(-torch.mean(torch.abs(image_gradients_x), 1, keepdim=True))
     weights_y = torch.exp(-torch.mean(torch.abs(image_gradients_y), 1, keepdim=True))

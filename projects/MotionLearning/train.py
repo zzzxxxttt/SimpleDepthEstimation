@@ -132,8 +132,9 @@ def do_train(cfg, model, resume=False):
                                                         cmap='plasma')
                         storage.put_image(img_name='proximity_weight',
                                           img_tensor=output['depth_proximity_weight'][0][0][0].detach())
-                        storage.put_image(img_name='motion_field',
-                                          img_tensor=output['motion_pred'][0].detach())
+                        motion_pred = output['motion_pred'][0].detach()
+                        motion_pred = (motion_pred - motion_pred.min()) / (motion_pred.max() - motion_pred.min())
+                        storage.put_image(img_name='motion_field', img_tensor=motion_pred)
 
                 optimizer.zero_grad()
                 losses.backward()

@@ -21,11 +21,14 @@ def motion_consistency_loss(coords_A_in_B, mask, R_A2B, R_B2A, t_A2B, t_B2A):
     # a row vector of 3 zeros. We see that the total rotation is R2*R1 and the t
     # total translation is R2*t1 + t2.
 
-    R2R1 = R_B2A @ R_A2B  # [B, 3, 3]
-    R2t1 = R_B2A[:, None, :, :] @ t_A2B.view(B, 3, 1, -1).permute(0, 3, 1, 2)  # [B, HxW, 3, 1]
+    R2R1 = R_A2B @ R_B2A  # [B, 3, 3]
+    R2t1 = R_A2B[:, None, :, :] @ sampled_t_B2A.view(B, 3, 1, -1).permute(0, 3, 1, 2)  # [B, HxW, 3, 1]
+    # R2R1 = R_B2A @ R_A2B  # [B, 3, 3]
+    # R2t1 = R_B2A[:, None, :, :] @ t_A2B.view(B, 3, 1, -1).permute(0, 3, 1, 2)  # [B, HxW, 3, 1]
 
     rot_unit = R2R1
-    trans_zero = R2t1[..., 0] + sampled_t_B2A.view(B, 3, -1).permute(0, 2, 1)
+    trans_zero = R2t1[..., 0] + t_A2B.view(B, 3, -1).permute(0, 2, 1)
+    # trans_zero = R2t1[..., 0] + sampled_t_B2A.view(B, 3, -1).permute(0, 2, 1)
 
     eyes = torch.eye(3, device=coords_A_in_B.device)[None, :, :].repeat(B, 1, 1)
 
@@ -46,8 +49,8 @@ def motion_consistency_loss(coords_A_in_B, mask, R_A2B, R_B2A, t_A2B, t_B2A):
 
 
 def motion_smoothness_loss_fn(motion_field, warp_around=False):
-    motion_gradients_x = gradient_x(motion_field)[:, :, :-1, :]
-    motion_gradients_y = gradient_y(motion_field)[:, :, :, :-1]
+    motion_gradients_x = gradient_x(motion_field, reversed=True)[:, :, 1:, :]
+    motion_gradients_y = gradient_y(motion_field, reversed=True)[:, :, :, 1:]
 
     return torch.sqrt(1e-24 + motion_gradients_x ** 2 + motion_gradients_y ** 2).mean()
 
