@@ -61,4 +61,4 @@ def motion_sparsity_loss_fn(motion_map):
     # We used L0.5 norm here because it's more sparsity encouraging than L1.
     # The coefficients are designed in a way that the norm asymptotes to L1 in
     # the small value limit.
-    return (2 * mean_abs_motion * torch.sqrt(abs_motion / (mean_abs_motion + 1e-5) + 1)).mean()
+    return (2 * mean_abs_motion * torch.sqrt(abs_motion / (mean_abs_motion + 1e-24) + 1)).mean()

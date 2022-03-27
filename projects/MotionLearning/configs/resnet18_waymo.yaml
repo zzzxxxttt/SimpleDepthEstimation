@@ -2,17 +2,17 @@ _BASE_: "./Base_waymo.yaml"
 
 MODEL:
   DEPTH_NET:
-    NAME: "GoogleResNet"
-    ENCODER_NAME: "18pt"
+    NAME: "GoogleResNetv2"
+    ENCODER_NAME: "18??"
     UPSAMPLE_DEPTH: False
     LEARN_SCALE: False
-    NORM: 'None'
-    NOISE_STDDEV: 0.2
+    NORM: 'randLN'
+    NOISE_STDDEV: 0.5
     RAMPUP_ITERS: 10000
 SOLVER:
   IMS_PER_BATCH: 16
-  LR_STEPS: (30,40)
+  LR_STEPS: (100,)
   GAMMA: 0.5
-  MAX_EPOCHS: 50
+  MAX_EPOCHS: 100
 DATALOADER:
   NUM_WORKERS: 8

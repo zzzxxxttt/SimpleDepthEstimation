@@ -6,9 +6,11 @@ MODEL:
     ENCODER_NAME: "18pt"
     UPSAMPLE_DEPTH: False
     LEARN_SCALE: False
-    NORM: 'None'
-    NOISE_STDDEV: 0.2
+    NORM: 'randLN'
+    NOISE_STDDEV: 0.5
     RAMPUP_ITERS: 10000
+  POSE_NET:
+    SCALE_CONSTRAIN: "clip_ste"
 SOLVER:
   IMS_PER_BATCH: 16
   LR_STEPS: (200,)

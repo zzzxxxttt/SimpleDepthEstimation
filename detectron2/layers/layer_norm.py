@@ -10,12 +10,11 @@ class RandLayerNorm(nn.Module):
         self.eps = eps
         self.stddev = 0.5
         self.elementwise_affine = elementwise_affine
+        self.weight = None
+        self.bias = None
         if self.elementwise_affine:
             self.weight = nn.Parameter(torch.Tensor(num_channels))
             self.bias = nn.Parameter(torch.Tensor(num_channels))
-        else:
-            self.register_parameter('weight', None)
-            self.register_parameter('bias', None)
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -28,8 +27,9 @@ class RandLayerNorm(nn.Module):
         if self.training:
             mean *= 1.0 + torch.fmod(torch.randn_like(mean) * self.stddev, self.stddev * 2)
             var *= 1.0 + torch.fmod(torch.randn_like(var) * self.stddev, self.stddev * 2)
-        out = (input - mean.detach()) / (var.detach() + self.eps)
-        out = self.weight.view(1, -1, 1, 1) * out + self.bias.view(1, -1, 1, 1)
+        out = (input - mean.detach()) * torch.rsqrt(var + self.eps).detach()
+        if self.elementwise_affine:
+            out = self.weight.view(1, -1, 1, 1) * out + self.bias.view(1, -1, 1, 1)
         return out
 
 

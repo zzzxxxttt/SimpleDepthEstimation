@@ -23,6 +23,10 @@ def conv_gn_relu(in_planes, out_planes, kernel_size=3, stride=2, group_norm=True
 conv2d = nn.Conv2d
 
 
+def clip_STE(x, min_value):
+    return (torch.clamp_min(x, min_value) - x).detach() + x
+
+
 @POSE_NET_REGISTRY.register()
 class GooglePoseNet(nn.Module):
     """Pose network """
@@ -110,6 +114,7 @@ class GoogleMotionNet(nn.Module):
         group_norm = cfg.MODEL.POSE_NET.GROUP_NORM
         self.learn_scale = cfg.MODEL.POSE_NET.LEARN_SCALE
         self.mask_motion = cfg.MODEL.POSE_NET.MASK_MOTION
+        self.scale_constrain = cfg.MODEL.POSE_NET.get('SCALE_CONSTRAIN', 'clip')
         self.motion_weight = 1.0
 
         in_channels = 4 * 2 if cfg.MODEL.POSE_NET.USE_DEPTH else 3 * 2
@@ -136,8 +141,12 @@ class GoogleMotionNet(nn.Module):
         self.refiner0 = MotionRefiner(channel_out=3, channel_mid=in_channels, group_norm=False)
 
         if self.learn_scale:
-            self.register_parameter('rot_scale', nn.Parameter(torch.tensor(0.01)))
-            self.register_parameter('trans_scale', nn.Parameter(torch.tensor(0.01)))
+            if self.scale_constrain == 'softplus':
+                self.register_parameter('rot_scale', nn.Parameter(torch.tensor(0.4)))
+                self.register_parameter('trans_scale', nn.Parameter(torch.tensor(0.4)))
+            else:
+                self.register_parameter('rot_scale', nn.Parameter(torch.tensor(0.01)))
+                self.register_parameter('trans_scale', nn.Parameter(torch.tensor(0.01)))
 
         self.apply(self.init_weights)
 
@@ -170,8 +179,18 @@ class GoogleMotionNet(nn.Module):
         residual_motion = self.refiner0(residual_motion, batch['pose_net_input'])
 
         if self.learn_scale:
-            trans_scale = torch.relu(self.trans_scale - 0.001) + 0.001
-            rot_scale = torch.relu(self.rot_scale - 0.001) + 0.001
+            if self.scale_constrain == 'clip_ste':
+                trans_scale = clip_STE(self.trans_scale, 0.001)
+                rot_scale = clip_STE(self.rot_scale, 0.001)
+            elif self.scale_constrain == 'clip':
+                trans_scale = torch.relu(self.trans_scale - 0.001) + 0.001
+                rot_scale = torch.relu(self.rot_scale - 0.001) + 0.001
+            elif self.scale_constrain == 'softplus':
+                trans_scale = F.softplus(self.trans_scale) * 0.01 + 0.001
+                rot_scale = F.softplus(self.rot_scale) * 0.01 + 0.001
+            else:
+                raise NotImplementedError
+
             pose = torch.cat([trans[:, :, 0, 0] * trans_scale, rot[:, :, 0, 0] * rot_scale], -1)
             residual_motion = residual_motion * trans_scale
         else:

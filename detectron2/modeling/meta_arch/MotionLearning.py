@@ -3,6 +3,7 @@ from collections import defaultdict
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from .build import META_ARCH_REGISTRY
 from ..depth_net import build_depth_net
@@ -58,6 +59,9 @@ class MotionLearningModel(nn.Module):
 
         self.pose_use_depth = cfg.MODEL.POSE_NET.USE_DEPTH
 
+        self.with_mask = cfg.MODEL.get('WITH_MASK', False)
+        self.mask_dilation = cfg.MODEL.get('MASK_DILATION', 8)
+
         self.return_loss = cfg.MODEL.get('RETURN_LOSS', False)
 
         self.register_buffer("pixel_mean", torch.Tensor(cfg.MODEL.PIXEL_MEAN).view(1, -1, 1, 1))
@@ -101,7 +105,18 @@ class MotionLearningModel(nn.Module):
             if 'motion_pred' in batch:
                 motion_1to2, motion_2to1 = torch.chunk(batch['motion_pred'], 2, dim=0)
 
+                if self.with_mask:
+                    mask1 = (batch["mask"] > 0).float()
+                    mask2 = (batch['ctx_mask'][0] > 0).float()
+                    if self.mask_dilation > 0:
+                        pool_size = self.mask_dilation * 2 + 1
+                        mask1 = F.max_pool2d(mask1, pool_size, stride=1, padding=self.mask_dilation)
+                        mask2 = F.max_pool2d(mask2, pool_size, stride=1, padding=self.mask_dilation)
+                    motion_1to2 = motion_1to2 * mask1
+                    motion_2to1 = motion_2to1 * mask2
+
             batch['depth_proximity_weight'] = []
+            batch['overall_motion'] = []
             losses = defaultdict(lambda: 0)
             for i in reversed(range(self.num_scales)):
                 scale_w = 1.0 / 2 ** i
@@ -135,6 +150,8 @@ class MotionLearningModel(nn.Module):
                     resized_motion_2to1 = None
                     t_1to2 = t_1to2.expand(-1, -1, H, W)
                     t_2to1 = t_2to1.expand(-1, -1, H, W)
+
+                batch['overall_motion'].append((t_1to2, t_2to1))
 
                 if self.scale_normalize:
                     depth_mean = torch.mean(torch.cat([resized_depth1, resized_depth2], 0))
@@ -239,7 +256,7 @@ class MotionLearningModel(nn.Module):
 
         sampled_frame_B, sampled_depth_B = torch.split(sampled_values, [3, 1], dim=1)
 
-        occlusion_mask = ((depth_in_B < sampled_depth_B).float() * proj_mask.float()).detach()
+        occlusion_mask = ((depth_in_B < sampled_depth_B).float() * proj_mask.float())
 
         return_dict['occlusion_mask'] = occlusion_mask
 

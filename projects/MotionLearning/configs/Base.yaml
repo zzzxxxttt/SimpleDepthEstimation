@@ -7,7 +7,7 @@ MODEL:
     GROUP_NORM: False
     MASK_MOTION: True
     LEARN_SCALE: True
-    BURN_IN_ITERS: 15000
+    BURN_IN_ITERS: 20000
 LOSS:
   NUM_SCALES: 1
   SSIM_WEIGHT: 3.0
@@ -31,8 +31,9 @@ DATASETS:
     DEPTH_ROOT: "/data2/data/kitti/kitti_depth_groundtruth"
     SPLIT: "/data2/data/kitti/splits/eigen_train_files.txt"
     DEPTH_TYPE: "none"
+#    USE_CAMS: ["image_02", "image_03"]
     WITH_POSE: False
-    BACKWARD_CONTEXT: 1
+    FORWARD_CONTEXT: 1
     STRIDE: 1
     PREPROCESS:
       - NAME: LoadImg

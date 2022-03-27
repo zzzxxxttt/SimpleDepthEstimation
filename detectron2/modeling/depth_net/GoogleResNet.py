@@ -6,13 +6,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import torchvision.models as models
 from torchvision.models.resnet import model_urls
 from torchvision.models.utils import load_state_dict_from_url
 
 from .build import DEPTH_NET_REGISTRY
 
-from ...layers.layer_norm import RandLayerNorm
+# import torchvision.models as models
+import detectron2.layers.resnet as models
+from detectron2.layers.layer_norm import RandLayerNorm
 
 logger = logging.getLogger(__name__)
 
