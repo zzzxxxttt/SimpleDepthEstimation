@@ -76,6 +76,28 @@ class LoadDepth(Preprocess):
 
 
 @PREPROCESS_REGISTRY.register()
+class LoadMask(Preprocess):
+    def __init__(self, cfg):
+        super(LoadMask, self).__init__(cfg)
+
+    def _load(self, mask_dir):
+        mask = cv2.imread(mask_dir, -1).astype(np.float32)
+        assert mask is not None, f"'{mask_dir} does not exist!'"
+        return mask
+
+    def forward(self, data_dict):
+
+        data_dict['mask'] = self._load(data_dict['metadata']['mask_dir'])
+
+        if self.load_ctx:
+            data_dict['ctx_mask'] = []
+            for mask_dir in data_dict['metadata']['ctx_mask_dir']:
+                data_dict['ctx_mask'].append(self._load(mask_dir))
+
+        return data_dict
+
+
+@PREPROCESS_REGISTRY.register()
 class LoadLidar(Preprocess):
     def __init__(self, cfg):
         super(LoadLidar, self).__init__(cfg)
@@ -100,5 +122,3 @@ class LoadLidar(Preprocess):
                 data_dict['ctx_lidar'].append(self._load(lidar_dir))
 
         return data_dict
-
-

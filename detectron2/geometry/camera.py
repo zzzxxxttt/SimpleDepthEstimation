@@ -179,13 +179,18 @@ def view_synthesis(image_B, depth_A, intrinsics, R_A_to_B, t_A_to_B):
 
     points_A_coords_in_B, points_A_depth_in_B, valid_proj_mask = points_to_img(points_A, R, t)
 
-    points_A_coords_in_B = points_A_coords_in_B.nan_to_num()
+    Xs, Ys = points_A_coords_in_B[..., 0], points_A_coords_in_B[..., 1]
 
-    # points_A_coords_in_B[..., 0] = torch.clamp(points_A_coords_in_B[..., 0], 0, W - 1)
-    # points_A_coords_in_B[..., 1] = torch.clamp(points_A_coords_in_B[..., 1], 0, H - 1)
+    Xs = Xs.nan_to_num()
+    Ys = Ys.nan_to_num()
 
-    points_A_coords_in_B[..., 0] = 2 * points_A_coords_in_B[..., 0] / (W - 1) - 1.
-    points_A_coords_in_B[..., 1] = 2 * points_A_coords_in_B[..., 1] / (H - 1) - 1.
+    Xs = torch.clamp(Xs, 0, W - 1)
+    Ys = torch.clamp(Ys, 0, H - 1)
+
+    Xs = 2 * Xs / (W - 1) - 1.
+    Ys = 2 * Ys / (H - 1) - 1.
+
+    points_A_coords_in_B = torch.stack([Xs, Ys], -1)
 
     # View-synthesis given the projected reference points
     sampled_B = F.grid_sample(image_B, points_A_coords_in_B,

@@ -19,12 +19,14 @@ class WaymoDepth(DatasetBase):
 
         self.data_root = dataset_cfg.DATA_ROOT
         self.depth_root = dataset_cfg.DEPTH_ROOT
+        self.mask_root = dataset_cfg.get('MASK_ROOT', None)
         self.split_file = dataset_cfg.SPLIT
 
         self.downsample = dataset_cfg.get('DOWNSAMPLE', 1)
 
-        self.use_cams = dataset_cfg.get('USE_CAM', 'FRONT')
+        self.use_cams = dataset_cfg.get('USE_CAMS', 'FRONT')
         self.with_depth = dataset_cfg.get('WITH_DEPTH', False)
+        self.with_mask = self.mask_root is not None
 
         self.forward_context = dataset_cfg.get('FORWARD_CONTEXT', 0)
         self.backward_context = dataset_cfg.get('BACKWARD_CONTEXT', 0)
@@ -42,7 +44,7 @@ class WaymoDepth(DatasetBase):
             metadatas = []
             for frame, frame_info in seg_info['frames'].items():
                 metadatas.append((segment, frame, frame_info['cams']))
-            self.metadatas.extend(sorted(metadatas, key=lambda x: x[1])[:len(metadatas) // self.downsample])
+            self.metadatas.extend(sorted(metadatas, key=lambda x: x[1])[::self.downsample])
             self.calib_cache[segment] = seg_info['cams']
 
         if self.downsample > 1:
@@ -98,6 +100,12 @@ class WaymoDepth(DatasetBase):
                                                    for ctx_idx in self.context_list[idx]]},
                     'intrinsics': self.calib_cache[segment][cam]['intrinsics'][:3, :3].astype(np.float32)}
 
+            if self.with_mask:
+                data['metadata']['mask_dir'] = self._get_mask_dir(segment, img_time[cam], cam)
+                data['metadata']['ctx_mask_dir'] = [self._get_mask_dir(self.metadatas[ctx_idx][0],
+                                                                       self.metadatas[ctx_idx][2][cam], cam)
+                                                    for ctx_idx in self.context_list[idx]]
+
             # T = np.array([[0, -1, 0, 0],
             #               [0, 0, -1, 0],
             #               [1, 0, 0, 0],
@@ -114,8 +122,11 @@ class WaymoDepth(DatasetBase):
     def _get_depth_dir(self, segment, img_time, cam):
         return os.path.join(self.depth_root, segment, cam, f'{img_time}.png')
 
+    def _get_mask_dir(self, segment, img_time, cam):
+        return os.path.join(self.mask_root, segment, cam, f'{img_time}.png')
+
     def batch_collator(self, batch_list):
-        batch_list = [d for data in batch_list for d in data] # absorb camera dim into batch
+        batch_list = [d for data in batch_list for d in data]  # absorb camera dim into batch
 
         # convert list of dict into dict of list
         example_merged = defaultdict(list)
@@ -129,12 +140,12 @@ class WaymoDepth(DatasetBase):
                 ret[key] = torch.stack(value, 0)
             elif key in ['intrinsics', 'pose_gt']:
                 ret[key] = torch.from_numpy(np.stack(value, 0))
-            elif key in ['depth']:
+            elif key in ['depth', 'mask']:
                 ret[key] = torch.from_numpy(np.stack(value, 0)[:, None, ...])
             elif key in ['ctx_img', 'ctx_img_orig']:
                 value = np.stack([np.stack(v, 0) for v in value])
                 ret[key] = [value[:, i] for i in range(value.shape[1])]
-            elif key in ['ctx_depth']:
+            elif key in ['ctx_depth', 'ctx_mask']:
                 value = np.stack([np.stack(v, 0)[:, None, ...] for v in value])
                 ret[key] = [value[:, i] for i in range(value.shape[1])]
             elif key == 'flip':

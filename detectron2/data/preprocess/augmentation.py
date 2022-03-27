@@ -46,11 +46,17 @@ class KBCrop(Preprocess):
         if 'depth' in data_dict:
             data_dict['depth'] = data_dict['depth'][y_start:y_end, x_start:x_end]
 
+        if 'mask' in data_dict:
+            data_dict['mask'] = data_dict['mask'][y_start:y_end, x_start:x_end]
+
         if 'ctx_img' in data_dict:
             data_dict['ctx_img'] = [img[y_start:y_end, x_start:x_end] for img in data_dict['ctx_img']]
 
         if 'ctx_depth' in data_dict:
             data_dict['ctx_depth'] = [depth[y_start:y_end, x_start:x_end] for depth in data_dict['ctx_depth']]
+
+        if 'ctx_mask' in data_dict:
+            data_dict['ctx_mask'] = [mask[y_start:y_end, x_start:x_end] for mask in data_dict['ctx_mask']]
 
         data_dict['metadata']['kb_y_start'] = y_start
         data_dict['metadata']['kb_x_start'] = x_start
@@ -87,11 +93,17 @@ class CropTopTo(Preprocess):
         if 'depth' in data_dict:
             data_dict['depth'] = data_dict['depth'][y_start:]
 
+        if 'mask' in data_dict:
+            data_dict['mask'] = data_dict['mask'][y_start:]
+
         if 'ctx_img' in data_dict:
             data_dict['ctx_img'] = [img[y_start:] for img in data_dict['ctx_img']]
 
         if 'ctx_depth' in data_dict:
             data_dict['ctx_depth'] = [depth[y_start:] for depth in data_dict['ctx_depth']]
+
+        if 'ctx_mask' in data_dict:
+            data_dict['ctx_mask'] = [mask[y_start:] for mask in data_dict['ctx_mask']]
 
         data_dict['metadata']['crop_y_start'] = y_start
         data_dict['metadata']['h_before_crop'] = img_h
@@ -128,12 +140,21 @@ class Resize(Preprocess):
         if 'depth' in data_dict:
             data_dict['depth'] = resize_depth(data_dict['depth'], (self.img_h, self.img_w))
 
+        if 'mask' in data_dict:
+            data_dict['depth'] = cv2.resize(
+                data_dict['depth'], (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)
+
         if 'ctx_img' in data_dict:
             data_dict['ctx_img'] = [cv2.resize(img, (self.img_w, self.img_h)) for img in data_dict['ctx_img']]
 
         if 'ctx_depth' in data_dict:
             data_dict['ctx_depth'] = [resize_depth(depth, (self.img_h, self.img_w))
                                       for depth in data_dict['ctx_depth']]
+
+        if 'ctx_mask' in data_dict:
+            data_dict['ctx_mask'] = \
+                [cv2.resize(mask, (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)
+                 for mask in data_dict['ctx_mask']]
 
         data_dict['metadata']['h_before_resize'] = H
         data_dict['metadata']['w_before_resize'] = W
@@ -171,11 +192,17 @@ class RandomCrop(Preprocess):
         if 'depth' in data_dict:
             data_dict['depth'] = data_dict['depth'][y_start:y_end, x_start:x_end]
 
+        if 'mask' in data_dict:
+            data_dict['mask'] = data_dict['mask'][y_start:y_end, x_start:x_end]
+
         if 'ctx_img' in data_dict:
             data_dict['ctx_img'] = [img[y_start:y_end, x_start:x_end] for img in data_dict['ctx_img']]
 
         if 'ctx_depth' in data_dict:
             data_dict['ctx_depth'] = [depth[y_start:y_end, x_start:x_end] for depth in data_dict['ctx_depth']]
+
+        if 'ctx_mask' in data_dict:
+            data_dict['ctx_mask'] = [mask[y_start:y_end, x_start:x_end] for mask in data_dict['ctx_mask']]
 
         data_dict['metadata']['rand_y_start'] = y_start
         data_dict['metadata']['rand_x_start'] = x_start

@@ -22,6 +22,7 @@ class KittiDepthV2(DatasetBase):
 
         self.depth_type = dataset_cfg.get('DEPTH_TYPE', 'none')
         self.with_depth = self.depth_type != 'none'
+        self.use_cams = dataset_cfg.get('USE_CAMS', 'image_02')
 
         self.forward_context = dataset_cfg.get('FORWARD_CONTEXT', 0)
         self.backward_context = dataset_cfg.get('BACKWARD_CONTEXT', 0)
@@ -33,21 +34,23 @@ class KittiDepthV2(DatasetBase):
         self.metadatas = []
         count = 0
         for line in open(self.split_file, 'r'):
-            line = line.strip().split()
-            date = line[0].split('/')[0]
-            drive = line[0].split('/')[1].replace(f'{date}_drive_', '').replace('_sync', '')
-            img_id = line[0].split('/')[-1].replace('.png', '')
-            count += 1
+            for line_ in line.strip().split():
+                date = line_.split('/')[0]
+                drive = line_.split('/')[1].replace(f'{date}_drive_', '').replace('_sync', '')
+                cam = line_.split('/')[2]
+                img_id = line_.split('/')[-1].replace('.png', '')
+                count += 1
 
-            # check file exists
-            if (not os.path.isfile(self._get_img_dir(date, drive, img_id))) \
-                    or (self.depth_type != 'none' and (
-                    not os.path.isfile(self._get_depth_dir(date, drive, img_id)))):
-                continue
+                # check file exists
+                if (not os.path.isfile(self._get_img_dir(date, drive, cam, img_id))) \
+                        or (self.depth_type != 'none' and (
+                        not os.path.isfile(self._get_depth_dir(date, drive, cam, img_id)))) \
+                        or cam not in self.use_cams:
+                    continue
 
-            self.metadatas.append((date, drive, img_id))
+                self.metadatas.append((date, drive, cam, img_id))
 
-        self.metadatas = sorted(self.metadatas, key=lambda x: (x[0], x[1], x[2]))
+        self.metadatas = sorted(self.metadatas, key=lambda x: (x[0], x[1], x[2], x[3]))
 
         logger.info(f'Loaded {count} samples')
         logger.info(f'After existence filtering, {len(self.metadatas)} samples left')
@@ -58,7 +61,7 @@ class KittiDepthV2(DatasetBase):
 
         if self.with_context:
             self.valid_inds = []
-            for idx, (date, drive, img_id) in enumerate(self.metadatas):
+            for idx, (date, drive, cam, img_id) in enumerate(self.metadatas):
                 for offset in range(-self.backward_context * self.stride,
                                     self.forward_context * self.stride + 1,
                                     self.stride):
@@ -67,7 +70,8 @@ class KittiDepthV2(DatasetBase):
                         if 0 <= new_idx < len(self.metadatas) \
                                 and self.metadatas[new_idx][0] == date \
                                 and self.metadatas[new_idx][1] == drive \
-                                and int(self.metadatas[new_idx][2]) == int(img_id) + offset:
+                                and self.metadatas[new_idx][2] == cam \
+                                and int(self.metadatas[new_idx][3]) == int(img_id) + offset:
                             self.context_list[idx].append(new_idx)
                 if len(self.context_list[idx]) == self.backward_context + self.forward_context:
                     self.valid_inds.append(idx)
@@ -86,15 +90,16 @@ class KittiDepthV2(DatasetBase):
     def __getitem__(self, idx_):
         idx = self.valid_inds[idx_]
 
-        date, drive, img_id = self.metadatas[idx]
+        date, drive, cam, img_id = self.metadatas[idx]
 
         data = {'metadata': {'idx': idx,
                              'date': date,
                              'drive': drive,
+                             'cam': cam,
                              'img_id': img_id,
-                             'img_dir': self._get_img_dir(date, drive, img_id),
-                             'depth_dir': self._get_depth_dir(date, drive, img_id),
-                             'lidar_dir': self._get_lidar_dir(date, drive, img_id),
+                             'img_dir': self._get_img_dir(date, drive, cam, img_id),
+                             'depth_dir': self._get_depth_dir(date, drive, cam, img_id),
+                             'lidar_dir': self._get_lidar_dir(date, drive, cam, img_id),
                              'ctx_img_dir': [self._get_img_dir(*self.metadatas[ctx_idx])
                                              for ctx_idx in self.context_list[idx]],
                              'ctx_depth_dir': [self._get_depth_dir(*self.metadatas[ctx_idx])
@@ -114,11 +119,11 @@ class KittiDepthV2(DatasetBase):
                                       'lidar_calib': lidar_calib,
                                       'imu_calib': imu_calib}
 
-        P2 = np.eye(4, dtype=np.float32)
-        P2[:3, :] = np.array(cam_calib['P_rect_02']).reshape([3, 4])
+        Px = np.eye(4, dtype=np.float32)
+        Px[:3, :] = np.array(cam_calib[f'P_rect_0{cam[-1]}']).reshape([3, 4])
         R0 = np.eye(4, dtype=np.float32)
         R0[:3, :3] = np.array(cam_calib['R_rect_00']).reshape([3, 3])
-        data['intrinsics'] = P2[:3, :3]
+        data['intrinsics'] = Px[:3, :3]
 
         if self.with_pose:
             velo2cam = T_from_R_t_np(lidar_calib['R'], lidar_calib['T'])
@@ -130,26 +135,25 @@ class KittiDepthV2(DatasetBase):
 
         return data
 
-    def _get_img_dir(self, date, drive, img_id):
-        return os.path.join(self.data_root, date, f'{date}_drive_{drive}_sync',
-                            'image_02', 'data', f'{img_id}.png')
+    def _get_img_dir(self, date, drive, cam, img_id):
+        return os.path.join(self.data_root, date, f'{date}_drive_{drive}_sync', cam, 'data', f'{img_id}.png')
 
-    def _get_depth_dir(self, date, drive, img_id):
+    def _get_depth_dir(self, date, drive, cam, img_id):
         if self.depth_type == 'none':
             return ''
         elif self.depth_type == 'velodyne':
             return os.path.join(self.depth_root, date, f'{date}_drive_{drive}_sync',
-                                'proj_depth', 'velodyne', 'image_02', f'{img_id}.npz')
+                                'proj_depth', 'velodyne', cam, f'{img_id}.npz')
         elif self.depth_type == 'groundtruth':
             return os.path.join(self.depth_root, date, f'{date}_drive_{drive}_sync',
-                                'proj_depth', 'groundtruth', 'image_02', f'{img_id}.png')
+                                'proj_depth', 'groundtruth', cam, f'{img_id}.png')
         elif self.depth_type == 'refined':
             return os.path.join(self.depth_root, f'{date}_drive_{drive}_sync',
-                                'proj_depth', 'groundtruth', 'image_02', f'{img_id}.png')
+                                'proj_depth', 'groundtruth', cam, f'{img_id}.png')
         else:
             raise NotImplementedError
 
-    def _get_lidar_dir(self, date, drive, img_id):
+    def _get_lidar_dir(self, date, drive, cam, img_id):
         return os.path.join(self.data_root, date, f'{date}_drive_{drive}_sync',
                             'velodyne_points', 'data', f'{img_id}.bin')
 

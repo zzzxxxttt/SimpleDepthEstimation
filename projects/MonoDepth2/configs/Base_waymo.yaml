@@ -18,7 +18,7 @@ DATASETS:
     DATA_ROOT: "/data2/data/waymo/training/image"
     DEPTH_ROOT: "/data2/data/waymo/training/depth"
     SPLIT: "/data2/data/waymo/infos/training_infos.pkl"
-    USE_CAM: ['FRONT']
+    USE_CAMS: ['FRONT']
     DOWNSAMPLE: 2
     WITH_DEPTH: False
     WITH_POSE: False
@@ -41,7 +41,7 @@ DATASETS:
     DATA_ROOT: "/data2/data/waymo/validation/image"
     DEPTH_ROOT: "/data2/data/waymo/validation/depth"
     SPLIT: "/data2/data/waymo/infos/validation_infos.pkl"
-    USE_CAM: ['FRONT']
+    USE_CAMS: ['FRONT']
     DOWNSAMPLE: 20
     WITH_DEPTH: False
     WITH_POSE: False
