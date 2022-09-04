@@ -6,6 +6,8 @@ This is a unified codebase for NN-based monocular depth estimation, the framewor
 
 ## Updates
 
+### 2022-09-04
+* Add unsupervised motion learning 
 ### 2022-03-06
 * Add waymo dataset support 
 
@@ -78,7 +80,7 @@ python tools/demo.py --cfg path/to/config --input path/to/image --output path/to
 
 ## Todo
 - [x] add [PackNet](https://arxiv.org/abs/1905.02693)
-- [ ] add [Dynamic Motion Learning](https://arxiv.org/abs/2010.16404) (I have implemented it but still buggy, help welcome!)
+- [x] add [Dynamic Motion Learning](https://arxiv.org/abs/2010.16404) (I have implemented it but still buggy, help welcome!)
 - [ ] add [Depth From Videos in the Wild](https://openaccess.thecvf.com/content_ICCV_2019/html/Gordon_Depth_From_Videos_in_the_Wild_Unsupervised_Monocular_Depth_Learning_ICCV_2019_paper.html)
 - [ ] add [Full Surround Monodepth](https://arxiv.org/abs/2104.00152)
 - [ ] support more datasets
