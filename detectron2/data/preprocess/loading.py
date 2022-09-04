@@ -89,10 +89,9 @@ class LoadMask(Preprocess):
 
         data_dict['mask'] = self._load(data_dict['metadata']['mask_dir'])
 
-        if self.load_ctx:
-            data_dict['ctx_mask'] = []
-            for mask_dir in data_dict['metadata']['ctx_mask_dir']:
-                data_dict['ctx_mask'].append(self._load(mask_dir))
+        data_dict['ctx_mask'] = []
+        for mask_dir in data_dict['metadata']['ctx_mask_dir']:
+            data_dict['ctx_mask'].append(self._load(mask_dir))
 
         return data_dict
 

@@ -43,10 +43,10 @@ DATASETS:
         WITH_CTX: true
       - NAME: LoadMask
       - NAME: CropTopTo
-        IMG_H: 768
+        IMG_H: 1152
       - NAME: Resize
         IMG_W: 320
-        IMG_H: 128
+        IMG_H: 192
       - NAME: RandomFlip
       - NAME: RandomImageAug
       - NAME: ToTensor
@@ -66,10 +66,10 @@ DATASETS:
       - NAME: ClipDepth
         MAX_DEPTH: *max_depth
       - NAME: CropTopTo
-        IMG_H: 768
+        IMG_H: 1152
       - NAME: Resize
         IMG_W: 320
-        IMG_H: 128
+        IMG_H: 192
       - NAME: ToTensor
 
 SOLVER:

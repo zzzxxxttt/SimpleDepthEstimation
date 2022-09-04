@@ -141,8 +141,8 @@ class Resize(Preprocess):
             data_dict['depth'] = resize_depth(data_dict['depth'], (self.img_h, self.img_w))
 
         if 'mask' in data_dict:
-            data_dict['depth'] = cv2.resize(
-                data_dict['depth'], (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)
+            data_dict['mask'] = cv2.resize(
+                data_dict['mask'], (self.img_w, self.img_h), interpolation=cv2.INTER_NEAREST)
 
         if 'ctx_img' in data_dict:
             data_dict['ctx_img'] = [cv2.resize(img, (self.img_w, self.img_h)) for img in data_dict['ctx_img']]
